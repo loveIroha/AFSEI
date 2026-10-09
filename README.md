@@ -5,14 +5,17 @@ AFSEI：电–流固三场耦合（electrophysiology–fluid–solid interaction
 本仓库从 AFSI_GPU 已提交版本初始化，保留 GPU 流固求解器和验证用例。
 已实现 PyTorch 单域 PDE、CUDA GPB/Land、积分点主动载荷，并接入隐式流固时间推进。
 支持完整物理状态的失败回退、减小步长重试和断点续算。
-真实左心室的短程推进已验证；完整心动周期、预充盈和运动心肌的 Windkessel 端口连接仍待实现。
+真实左心室的三场双向短程推进已验证；完整心动周期、预充盈和高质量血液网格仍待验证。
 新增固定真实左心室腔体的理想化基底端口/RCR 子问题，验证实际流量、质量与离散能量守恒。
 已进一步对齐源项目的材料、基底参数及积分规则，并用重新生成的原 UFL 组装力与切线核对。
 详细记录见 [第一阶段](docs/EP_LAND_PHASE1.md)、[第二阶段](docs/EP_FSI_PHASE2.md)
 和 [源力学对齐](docs/SOURCE_MECHANICS_PHASE3.md)。
 端口几何、数学关系和当前边界限制见 [第四阶段](docs/CAVITY_PORTS_PHASE4.md)。
 第五阶段增加拟合移动血液域、几何守恒、独立集总阀门和 EP–FSI 几何单向传递。
-界面反力已计算并核对虚功，尚未反馈到固体；详见 [移动腔体阶段](docs/MOVING_CAVITY_PHASE5.md)。
+该阶段只传递几何；详见 [移动腔体阶段](docs/MOVING_CAVITY_PHASE5.md)。
+第六阶段用拟合血液反力替换原外箱流体，联立心肌运动与双阀关闭时的体积/压力约束。
+新三场驱动连接实际端口流量、RCR 和首次真实 AV 关闭后的 80 ms 张力卸载。
+数学模型与短算限制见 [双向三场阶段](docs/TWO_WAY_PHASE6.md)。
 
 ## 来源
 
@@ -41,6 +44,22 @@ python scripts/check_afsei_environment.py
 环境记录见 [environment/README.md](environment/README.md)。
 
 ## 检查和短程推进
+
+第六阶段的双向三场入口如下。真实网格首个 `0.2 ms` 约需两分钟；先做短算。
+默认从未预充盈的参考几何开始，这不是生理心动周期。
+
+```bash
+python scripts/run_afsei_two_way.py --duration-ms 0.2 --write-vtk --output results/my_two_way_02ms
+python scripts/run_afsei_two_way.py --resume results/my_two_way_02ms/checkpoint.npz --duration-ms 0.2 --output results/my_two_way_04ms
+```
+
+新驱动不创建外箱流体；使用 `26889` 个心肌节点和 `8584` 个血液单元的验证网格。
+固体采用 P1 集总惯性、后向 Euler，默认密度 `1 g/cm³`；源项目材料和主动 PK1 载荷保留。
+只有新驱动自己的三场检查点可以续算；早期外箱/单向检查点不能直接用于它。
+结果包含 `summary.json`、`history.csv`、三场 `checkpoint.npz` 和界面反力文件。
+`--write-vtk` 输出心肌电位/运动及血液压力/速度。
+
+下面保留各早期阶段的运行入口，供分模块检查。
 
 ```bash
 # 第一阶段组件检查，不推进流固运动
