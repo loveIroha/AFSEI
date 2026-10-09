@@ -26,5 +26,8 @@
   "cuda_arch_list": "8.9",
   "solver_module": "/mnt/large2/gjh/AFSEI/src/afsi_torch/__init__.py",
   "dense_and_sparse_gpu_checks": true,
-  "three_field_integration_implemented": false
+  "three_field_integration_implemented": false,
+  "inherited_cuda_tests": "41 passed, 1 warning in 155.62s (0:02:35)",
+  "target_architecture_cuda_tests": "3 passed, 1 warning in 30.79s",
+  "pip_check": "No broken requirements found."
 }
