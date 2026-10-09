@@ -1,0 +1,9 @@
+{
+  "project": "AFSEI",
+  "upstream_repository": "loveIroha/AFSI_GPU",
+  "upstream_commit": "f4f88204c5a494265611237ba6d3ce317bc179bd",
+  "electromechanics_repository": "loveIroha/test_ele_soild_heart",
+  "electromechanics_ref": "codex/wk-closed-volume-fill8-20260924",
+  "electromechanics_commit": "5bdde73c6be10cefadb005a0fcec5fdb6521f336",
+  "scope": "repository and environment initialization only"
+}

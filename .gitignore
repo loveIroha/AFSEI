@@ -9,3 +9,10 @@ build/
 dist/
 environment-*.json
 requirements-local-*.txt
+
+# AFSEI machine-local files
+.cache/
+.conda-env/
+.env
+.env.*
+*.log

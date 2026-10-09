@@ -1,0 +1,16 @@
+.........................................                                [100%]
+=============================== warnings summary ===============================
+tests/test_cuda_ib.py::test_cuda_backend_does_not_silently_run_cpu
+  /mnt/large2/gjh/AFSEI/src/afsi_torch/mac/transfer.py:39: UserWarning: Sparse CSR tensor support is in beta state. If you miss a functionality in the sparse tensor support, please submit a feature request to https://github.com/pytorch/pytorch/issues. (Triggered internally at /__w/pytorch/pytorch/aten/src/ATen/SparseCsrTensorImpl.cpp:49.)
+    size, device=W.device, dtype=W.dtype, check_invariants=True).coalesce().to_sparse_csr()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+41 passed, 1 warning in 155.62s (0:02:35)
+...                                                                      [100%]
+=============================== warnings summary ===============================
+tests/test_cuda_ib.py::test_cuda_loaded_be_endpoint_and_checkpoint_backend
+  /mnt/large2/gjh/AFSEI/src/afsi_torch/mac/transfer.py:39: UserWarning: Sparse CSR tensor support is in beta state. If you miss a functionality in the sparse tensor support, please submit a feature request to https://github.com/pytorch/pytorch/issues. (Triggered internally at /__w/pytorch/pytorch/aten/src/ATen/SparseCsrTensorImpl.cpp:49.)
+    size, device=W.device, dtype=W.dtype, check_invariants=True).coalesce().to_sparse_csr()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+3 passed, 1 warning in 30.79s

@@ -1,0 +1,30 @@
+{
+  "passed": true,
+  "python": "3.12.14",
+  "python_executable": "/mnt/large2/gjh/conda-envs/afsei/bin/python",
+  "packages": {
+    "afsei": "0.1.0",
+    "torch": "2.14.0+cu130",
+    "numpy": "2.5.3",
+    "triton": "3.8.0",
+    "ninja": "1.13.2",
+    "h5py": "3.16.0",
+    "meshio": "5.3.5",
+    "fenics-basix": "0.10.0",
+    "gmsh": "4.15.2",
+    "matplotlib": "3.11.2",
+    "pytest": "9.1.1"
+  },
+  "torch_cuda": "13.0",
+  "nvcc_release": "13.0",
+  "gpu": "NVIDIA GeForce RTX 4090",
+  "capability": [
+    8,
+    9
+  ],
+  "physical_gpu": "1",
+  "cuda_arch_list": "8.9",
+  "solver_module": "/mnt/large2/gjh/AFSEI/src/afsi_torch/__init__.py",
+  "dense_and_sparse_gpu_checks": true,
+  "three_field_integration_implemented": false
+}
