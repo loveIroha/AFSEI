@@ -5,10 +5,12 @@ AFSEI：电–流固三场耦合（electrophysiology–fluid–solid interaction
 本仓库从 AFSI_GPU 已提交版本初始化，保留 GPU 流固求解器和验证用例。
 已实现 PyTorch 单域 PDE、CUDA GPB/Land、积分点主动载荷，并接入隐式流固时间推进。
 支持完整物理状态的失败回退、减小步长重试和断点续算。
-真实左心室的短程推进已验证；完整心动周期、预充盈和 Windkessel 物理端口仍待实现。
+真实左心室的短程推进已验证；完整心动周期、预充盈和运动心肌的 Windkessel 端口连接仍待实现。
+新增固定真实左心室腔体的理想化基底端口/RCR 子问题，验证实际流量、质量与离散能量守恒。
 已进一步对齐源项目的材料、基底参数及积分规则，并用重新生成的原 UFL 组装力与切线核对。
 详细记录见 [第一阶段](docs/EP_LAND_PHASE1.md)、[第二阶段](docs/EP_FSI_PHASE2.md)
 和 [源力学对齐](docs/SOURCE_MECHANICS_PHASE3.md)。
+端口几何、数学关系和当前边界限制见 [第四阶段](docs/CAVITY_PORTS_PHASE4.md)。
 
 ## 来源
 
@@ -81,3 +83,22 @@ python scripts/check_afsei_mechanics.py
 当前运行从参考几何的首次刺激时刻开始，**没有完成 8 mmHg 预充盈，也没有连接
 AV/MV/Windkessel 物理端口**。外箱仍为零压力开放边界。
 报告将 `ep_fsi_time_integration_implemented` 与完整三场周期状态分别列出。
+
+## 固定腔体端口与 Windkessel 检查
+
+现有网格只有左心室，没有 AV/MV 几何。第四阶段在基底设置可配置的理想化端口，
+封闭其他边界，并在血液腔体内推进非定常 Stokes/RCR；不包含电生理、运动心肌或预充盈。
+原 `run_afsei.py` 的运动流固驱动仍未连接这些端口。两个检查点格式相互独立。
+
+```bash
+python scripts/run_afsei_cavity_ports.py --steps 20 --write-vtk --output results/my_cavity_ports_20ms
+python scripts/run_afsei_cavity_ports.py --resume results/my_cavity_ports_20ms/checkpoint.npz --steps 5 --output results/my_cavity_ports_25ms
+python -m pytest -q tests/test_cavity_ports.py
+```
+
+默认时间步为 1 ms，间距 0.18 cm，心房压力 8.5 mmHg，初始 RCR 电容压力 8 mmHg。
+这些压力用于端口测试，**不是已经完成的 8 mmHg 心肌预充盈**。
+端口中心及半径由 `--mv-center-cm`、`--av-center-cm`、`--mv-radius-cm`、`--av-radius-cm` 调整，
+坐标采用以基底平均位置为原点的局部平面。默认参数为验证配置，不代表患者瓣口。
+结果包含 `summary.json`、`history.csv`、数值检查点及可选 VTK/端口图。
+`fluid_ports_connected=true` 只表示固定流体子问题；完整三场标记仍为 `false`。
