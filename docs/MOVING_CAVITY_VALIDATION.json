@@ -1,0 +1,422 @@
+{
+  "scope": "moving fitted LV / swept GCL / independent lumped valves / one-way EP-FSI geometry; NO two-way blood feedback",
+  "base_commit": "e0c46c50b21faa74c1d61b901b2e1294257fc420",
+  "tests": {
+    "unique_passed": 142,
+    "broad_suite_passed": 142,
+    "note": "includes moving-path inversion and passive-throughflow/true-ejection distinction",
+    "broad_command": "OMP_NUM_THREADS=4 pytest -q tests/test_moving_cavity.py tests/test_moving_bridge.py tests/test_cavity_ports.py tests/test_source_mechanics.py tests/test_afsei_driver.py tests/test_ep_*.py tests/test_paper_lv.py tests/test_fluid.py tests/test_solvers.py"
+  },
+  "prescribed_real_lv_2ms": {
+    "status": "completed",
+    "failure": null,
+    "mode": "prescribed-verification",
+    "accepted_steps": 20,
+    "total_steps": 20,
+    "reached_time_s": 0.002,
+    "elapsed_seconds": 41.50348893646151,
+    "mesh": {
+      "mesh": "fitted star-kernel cone verification mesh; CR facet velocity/P0 pressure",
+      "anatomical_valves_present": false,
+      "cap_max_edge_cm": 0.3,
+      "solid_nodes": 26889,
+      "blood_vertices": 4295,
+      "blood_cells": 8584,
+      "blood_faces": 21460,
+      "wall_faces": 8233,
+      "mv_faces": 247,
+      "av_faces": 104,
+      "ports": {
+        "mv_center_cm": [
+          0.65,
+          0.0
+        ],
+        "av_center_cm": [
+          -0.65,
+          0.0
+        ],
+        "mv_radius_cm": 0.55,
+        "av_radius_cm": 0.4
+      },
+      "frame_center": [
+        7.438452319480519,
+        8.16086121038961,
+        11.002557549350652
+      ],
+      "frame_basis": [
+        [
+          0.9999609172951357,
+          7.388482701491926e-05,
+          0.00884072527018994
+        ],
+        [
+          -1.1564041882445366e-20,
+          0.9999650793766801,
+          -0.00835703459305875
+        ],
+        [
+          -0.008841034004608173,
+          0.008356707977542212,
+          0.9999259980366084
+        ]
+      ],
+      "reference_volume_ml": 68.33034840099813,
+      "minimum_reference_height_cm": 0.01148091960541444
+    },
+    "convection": true,
+    "final": {
+      "step": 20,
+      "time_s": 0.002,
+      "dt_s": 0.0001,
+      "mv_open": true,
+      "av_open": false,
+      "accepted_outlet_closure": false,
+      "q_in_ml_s": 2.049908402178235,
+      "q_out_ml_s": 0.0,
+      "ejection_seen_this_beat": true,
+      "volume_ml": 68.33034840099813,
+      "volume_rate_ml_s": 2.0499084022010936,
+      "mass_error_ml_s": 2.2858603898612273e-11,
+      "max_cell_flux_residual_ml_s": 4.925018726176233e-13,
+      "max_cell_divergence_s_inv": 2.767298828216867e-10,
+      "max_gcl_error_ml_s": 5.5574274565942106e-12,
+      "wall_relative_flux_max_ml_s": 0.0,
+      "pc_mmhg": 84.8888412745755,
+      "mv_port_pressure_mmhg": 8.479500915978218,
+      "av_port_pressure_mmhg": 84.8888412745755,
+      "pressure_mean_mmhg": 8.476438542120182,
+      "mv_closed_effective_pressure_mmhg": 5.280765360093823e-13,
+      "av_closed_effective_pressure_mmhg": 8.478213611572787,
+      "pressure_iterations": 600,
+      "viscosity_iterations": 16,
+      "convection_cfl": 0.004752742986059094,
+      "fluid_reaction_norm_dyn": 21649.743503116715,
+      "interface_work_error_erg_s": 0.0,
+      "free_momentum_residual_dyn": 8.65208193371464e-09,
+      "absolute_pressure_gauge_fixed_by_open_port": true,
+      "two_way_interface_feedback_implemented": false
+    },
+    "max_mass_error_ml_s": 8.504619231075594e-11,
+    "max_gcl_error_ml_s": 6.828006774350567e-12,
+    "max_cell_flux_residual_ml_s": 2.2454746395617065e-12,
+    "max_interface_work_error_erg_s": 2.9103830456733704e-11,
+    "accepted_outlet_closures": 1,
+    "moving_cavity_implemented": true,
+    "independent_lumped_valves_implemented": true,
+    "ep_geometry_drives_ale_blood": false,
+    "accepted_valve_events_connected_to_ep": false,
+    "two_way_interface_feedback_implemented": false,
+    "preload_performed": false,
+    "three_field_integration_implemented": false,
+    "cone_mesh_for_verification_only": true,
+    "closed_phase_absolute_pressure_requires_solid_constraint": true,
+    "original_ep_fsi_ib_fluid_retained_in_one_way_mode": false
+  },
+  "one_way_real_ep_02ms": {
+    "status": "completed",
+    "failure": null,
+    "mode": "one-way-ep-fsi-ale",
+    "accepted_steps": 2,
+    "total_steps": 2,
+    "reached_time_s": 0.5022,
+    "elapsed_seconds": 22.119315632618964,
+    "mesh": {
+      "mesh": "fitted star-kernel cone verification mesh; CR facet velocity/P0 pressure",
+      "anatomical_valves_present": false,
+      "cap_max_edge_cm": 0.3,
+      "solid_nodes": 26889,
+      "blood_vertices": 4295,
+      "blood_cells": 8584,
+      "blood_faces": 21460,
+      "wall_faces": 8233,
+      "mv_faces": 247,
+      "av_faces": 104,
+      "ports": {
+        "mv_center_cm": [
+          0.65,
+          0.0
+        ],
+        "av_center_cm": [
+          -0.65,
+          0.0
+        ],
+        "mv_radius_cm": 0.55,
+        "av_radius_cm": 0.4
+      },
+      "frame_center": [
+        7.438452319480519,
+        8.16086121038961,
+        11.002557549350652
+      ],
+      "frame_basis": [
+        [
+          0.9999609172951357,
+          7.388482701491926e-05,
+          0.00884072527018994
+        ],
+        [
+          -1.1564041882445366e-20,
+          0.9999650793766801,
+          -0.00835703459305875
+        ],
+        [
+          -0.008841034004608173,
+          0.008356707977542212,
+          0.9999259980366084
+        ]
+      ],
+      "reference_volume_ml": 68.33034840099813,
+      "minimum_reference_height_cm": 0.011480919605415033
+    },
+    "convection": true,
+    "final": {
+      "step": 2,
+      "time_s": 0.5022,
+      "dt_s": 0.0001,
+      "mv_open": true,
+      "av_open": true,
+      "accepted_outlet_closure": false,
+      "q_in_ml_s": 0.16260568327642375,
+      "q_out_ml_s": 0.16269899276914637,
+      "ejection_seen_this_beat": false,
+      "volume_ml": 68.33034837017775,
+      "volume_rate_ml_s": -9.330951492156e-05,
+      "mass_error_ml_s": -2.219893366350867e-11,
+      "max_cell_flux_residual_ml_s": 1.430010623804101e-13,
+      "max_cell_divergence_s_inv": 6.446309471892905e-11,
+      "max_gcl_error_ml_s": 4.921383098983325e-12,
+      "wall_relative_flux_max_ml_s": 0.0,
+      "pc_mmhg": 8.000018804266816,
+      "mv_port_pressure_mmhg": 8.498373943167236,
+      "av_port_pressure_mmhg": 8.008316452898042,
+      "pressure_mean_mmhg": 8.32227249663592,
+      "mv_closed_effective_pressure_mmhg": -1.8726805748224478e-14,
+      "av_closed_effective_pressure_mmhg": 5.10593106157229e-14,
+      "pressure_iterations": 608,
+      "viscosity_iterations": 16,
+      "convection_cfl": 0.00023933561187662822,
+      "fluid_reaction_norm_dyn": 20792.478791495927,
+      "interface_work_error_erg_s": 0.0,
+      "free_momentum_residual_dyn": 5.416176673822548e-10,
+      "absolute_pressure_gauge_fixed_by_open_port": true,
+      "two_way_interface_feedback_implemented": false,
+      "ep_tick": 10044,
+      "ta_applied_max_cgs": 0.3032590166616043,
+      "ta_next_mode": "land",
+      "ta_closure_tick": -1,
+      "rejected_attempts": 0
+    },
+    "max_mass_error_ml_s": 2.4782505908538255e-11,
+    "max_gcl_error_ml_s": 5.3175647360474395e-12,
+    "max_cell_flux_residual_ml_s": 1.4635710178512173e-13,
+    "max_interface_work_error_erg_s": 0.0,
+    "accepted_outlet_closures": 0,
+    "moving_cavity_implemented": true,
+    "independent_lumped_valves_implemented": true,
+    "ep_geometry_drives_ale_blood": true,
+    "accepted_valve_events_connected_to_ep": true,
+    "two_way_interface_feedback_implemented": false,
+    "preload_performed": false,
+    "three_field_integration_implemented": false,
+    "cone_mesh_for_verification_only": true,
+    "closed_phase_absolute_pressure_requires_solid_constraint": true,
+    "original_ep_fsi_ib_fluid_retained_in_one_way_mode": true
+  },
+  "one_way_resume_04ms": {
+    "status": "completed",
+    "failure": null,
+    "mode": "one-way-ep-fsi-ale",
+    "accepted_steps": 2,
+    "total_steps": 4,
+    "reached_time_s": 0.5024000000000001,
+    "elapsed_seconds": 23.020822724327445,
+    "mesh": {
+      "mesh": "fitted star-kernel cone verification mesh; CR facet velocity/P0 pressure",
+      "anatomical_valves_present": false,
+      "cap_max_edge_cm": 0.3,
+      "solid_nodes": 26889,
+      "blood_vertices": 4295,
+      "blood_cells": 8584,
+      "blood_faces": 21460,
+      "wall_faces": 8233,
+      "mv_faces": 247,
+      "av_faces": 104,
+      "ports": {
+        "mv_center_cm": [
+          0.65,
+          0.0
+        ],
+        "av_center_cm": [
+          -0.65,
+          0.0
+        ],
+        "mv_radius_cm": 0.55,
+        "av_radius_cm": 0.4
+      },
+      "frame_center": [
+        7.438452319480519,
+        8.16086121038961,
+        11.002557549350652
+      ],
+      "frame_basis": [
+        [
+          0.9999609172951357,
+          7.388482701491926e-05,
+          0.00884072527018994
+        ],
+        [
+          -1.1564041882445366e-20,
+          0.9999650793766801,
+          -0.00835703459305875
+        ],
+        [
+          -0.008841034004608173,
+          0.008356707977542212,
+          0.9999259980366084
+        ]
+      ],
+      "reference_volume_ml": 68.33034840099813,
+      "minimum_reference_height_cm": 0.011480919605415033
+    },
+    "convection": true,
+    "final": {
+      "step": 4,
+      "time_s": 0.5024000000000001,
+      "dt_s": 0.0001,
+      "mv_open": true,
+      "av_open": true,
+      "accepted_outlet_closure": false,
+      "q_in_ml_s": 0.3218982486357199,
+      "q_out_ml_s": 0.3220432788602592,
+      "ejection_seen_this_beat": false,
+      "volume_ml": 68.33034834396152,
+      "volume_rate_ml_s": -0.00014503016476782524,
+      "mass_error_ml_s": 5.977144126867451e-11,
+      "max_cell_flux_residual_ml_s": 1.279297848211236e-13,
+      "max_cell_divergence_s_inv": 6.683459069779372e-11,
+      "max_gcl_error_ml_s": 4.58531102498832e-12,
+      "wall_relative_flux_max_ml_s": 0.0,
+      "pc_mmhg": 8.000062245212725,
+      "mv_port_pressure_mmhg": 8.496781017513642,
+      "av_port_pressure_mmhg": 8.016486452434597,
+      "pressure_mean_mmhg": 8.324173823240315,
+      "mv_closed_effective_pressure_mmhg": -4.052193044522072e-14,
+      "av_closed_effective_pressure_mmhg": 2.1781238566995819e-13,
+      "pressure_iterations": 600,
+      "viscosity_iterations": 16,
+      "convection_cfl": 0.0007106026360745577,
+      "fluid_reaction_norm_dyn": 20797.249574678546,
+      "interface_work_error_erg_s": 0.0,
+      "free_momentum_residual_dyn": 1.6072196629135505e-09,
+      "absolute_pressure_gauge_fixed_by_open_port": true,
+      "two_way_interface_feedback_implemented": false,
+      "ep_tick": 10048,
+      "ta_applied_max_cgs": 0.41880575707977186,
+      "ta_next_mode": "land",
+      "ta_closure_tick": -1,
+      "rejected_attempts": 0
+    },
+    "max_mass_error_ml_s": 5.977144126867451e-11,
+    "max_gcl_error_ml_s": 4.58531102498832e-12,
+    "max_cell_flux_residual_ml_s": 1.2910852942304984e-13,
+    "max_interface_work_error_erg_s": 0.0,
+    "accepted_outlet_closures": 0,
+    "moving_cavity_implemented": true,
+    "independent_lumped_valves_implemented": true,
+    "ep_geometry_drives_ale_blood": true,
+    "accepted_valve_events_connected_to_ep": true,
+    "two_way_interface_feedback_implemented": false,
+    "preload_performed": false,
+    "three_field_integration_implemented": false,
+    "cone_mesh_for_verification_only": true,
+    "closed_phase_absolute_pressure_requires_solid_constraint": true,
+    "original_ep_fsi_ib_fluid_retained_in_one_way_mode": true
+  },
+  "uninterrupted_04ms_vs_resume": {
+    "max_absolute_errors": {
+      "solid_x_cm": 1.7763568394002505e-15,
+      "voltage_v": 3.3306690738754696e-16,
+      "gpb": 3.552713678800501e-15,
+      "land": 1.1102230246251565e-16,
+      "blood_velocity_cm_s": 5.921189464949846e-12,
+      "blood_pressure_cgs": 3.794411895796657e-09,
+      "pc_mmhg": 0.0,
+      "port_flow_ml_s": 3.6876057762924574e-13
+    },
+    "tolerance": "rtol 2e-6; atol 2e-8, pressure atol 2e-7 dyn/cm2",
+    "physical_step_clock_equal": true
+  },
+  "paired_numeric_roundtrip": {
+    "state_arrays_exact": true,
+    "next_step_max_absolute_errors": {
+      "blood_velocity": 1.5581571627047128e-11,
+      "blood_pressure": 1.5186742530204356e-08,
+      "solid_x": 1.7763568394002505e-15
+    }
+  },
+  "reference_mesh": {
+    "volume_ml": 68.33034840099813,
+    "port_area_cm2": {
+      "mv": 0.9737558053711465,
+      "av": 0.5290209520062527
+    },
+    "minimum_height_cm": 0.01148091960541366,
+    "metadata": {
+      "mesh": "fitted star-kernel cone verification mesh; CR facet velocity/P0 pressure",
+      "anatomical_valves_present": false,
+      "cap_max_edge_cm": 0.3,
+      "solid_nodes": 26889,
+      "blood_vertices": 4295,
+      "blood_cells": 8584,
+      "blood_faces": 21460,
+      "wall_faces": 8233,
+      "mv_faces": 247,
+      "av_faces": 104,
+      "ports": {
+        "mv_center_cm": [
+          0.65,
+          0.0
+        ],
+        "av_center_cm": [
+          -0.65,
+          0.0
+        ],
+        "mv_radius_cm": 0.55,
+        "av_radius_cm": 0.4
+      },
+      "frame_center": [
+        7.438452319480519,
+        8.16086121038961,
+        11.002557549350652
+      ],
+      "frame_basis": [
+        [
+          0.9999609172951357,
+          7.388482701491926e-05,
+          0.00884072527018994
+        ],
+        [
+          -1.1564041882445366e-20,
+          0.9999650793766801,
+          -0.00835703459305875
+        ],
+        [
+          -0.008841034004608173,
+          0.008356707977542212,
+          0.9999259980366084
+        ]
+      ],
+      "reference_volume_ml": 68.33034840099813,
+      "minimum_reference_height_cm": 0.011480919605415033
+    }
+  },
+  "closure_validation": "Accepted source closure anchor matches existing event interface; 40ms factor=.5 and 80ms factor=0. Real short EP run has no closure yet.",
+  "limitations": [
+    "one-way only; original IB fluid still determines solid motion",
+    "fitted cone verification mesh, no convergence claim",
+    "closed-phase absolute pressure needs two-way solid volume constraint",
+    "no 8mmHg preload/full-cycle validation",
+    "interface virtual-work equality only; no full moving solid/fluid energy proof"
+  ],
+  "elapsed_validation_seconds": 37.607413943856955
+}

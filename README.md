@@ -11,6 +11,8 @@ AFSEI：电–流固三场耦合（electrophysiology–fluid–solid interaction
 详细记录见 [第一阶段](docs/EP_LAND_PHASE1.md)、[第二阶段](docs/EP_FSI_PHASE2.md)
 和 [源力学对齐](docs/SOURCE_MECHANICS_PHASE3.md)。
 端口几何、数学关系和当前边界限制见 [第四阶段](docs/CAVITY_PORTS_PHASE4.md)。
+第五阶段增加拟合移动血液域、几何守恒、独立集总阀门和 EP–FSI 几何单向传递。
+界面反力已计算并核对虚功，尚未反馈到固体；详见 [移动腔体阶段](docs/MOVING_CAVITY_PHASE5.md)。
 
 ## 来源
 
@@ -102,3 +104,24 @@ python -m pytest -q tests/test_cavity_ports.py
 坐标采用以基底平均位置为原点的局部平面。默认参数为验证配置，不代表患者瓣口。
 结果包含 `summary.json`、`history.csv`、数值检查点及可选 VTK/端口图。
 `fluid_ports_connected=true` 只表示固定流体子问题；完整三场标记仍为 `false`。
+
+## 移动腔体与 EP 几何单向接入
+
+```bash
+# 真实 LV 上的小幅规定运动：收缩排出、扩张流入；没有 EP
+python scripts/run_afsei_moving_cavity.py --duration-ms 2 --write-vtk --output results/my_moving_cavity_2ms
+
+# 已有 EP–FSI 检查点的几何驱动移动血液域；8 mmHg 仅为端口检查配置
+python scripts/run_afsei_moving_cavity.py --ep-checkpoint results/my_source_mechanics_2ms/checkpoint.npz --initial-pc-mmhg 8 --duration-ms 0.2 --output results/my_one_way_ep_02ms
+
+# 单个原子检查点同时恢复 EP/GPB/Land/原流固状态和移动血液/RCR 状态
+python scripts/run_afsei_moving_cavity.py --resume results/my_one_way_ep_02ms/checkpoint.npz --duration-ms 0.2 --output results/my_one_way_ep_04ms
+```
+
+规定运动模式默认初始外周电容压力为 85 mmHg，时间步 0.1 ms；运动振幅仅 1e-5，
+用于接口检查，不代表真实心肌收缩或射血分数。`--ep` 可从源力学配置新建单向运行。
+移动端口采用相对流量，逐步检查 `dV/dt + qMV + qAV = 0`，不再强制进出口相等。
+接受的射血后 AV 关闭事件可连接到已有 80 ms 张力卸载，但短程 EP 检查未覆盖实际闭瓣。
+新血液域采用保留原内膜的锥形验证网格，尚未完成质量网格/空间收敛验证。
+原 EP–FSI 外箱流体仍参与固体运动，新计算的血液反力只导出；
+`two_way_interface_feedback_implemented=false`，完整三场状态仍为 `false`。

@@ -36,12 +36,14 @@ class SolveInfo:
 
 
 @torch.no_grad()
-def pcg(action, rhs, diagonal, *, fixed=None, values=None, initial=None, options=None):
+def pcg(action, rhs, diagonal, *, fixed=None, values=None, initial=None, options=None, preconditioner=None):
     """Solve A x=b on free DOFs, x_fixed=values, requiring SPD on free DOFs.
 
     The returned residual is the TRUE free residual b-Ax, not just the CG
     recurrence. Failure, nonfinite data or loss of positive curvature raises.
     Tolerance is max(atol,rtol*||P(b-A g)||), where g is the boundary lift.
+    An optional SPD inverse preconditioner is projected onto the free DOFs;
+    the supplied diagonal remains mandatory and is the default Jacobi inverse.
     """
     options = SolverOptions() if options is None else options
     if rhs.dtype not in (torch.float32, torch.float64) or not rhs.numel():
@@ -59,6 +61,12 @@ def pcg(action, rhs, diagonal, *, fixed=None, values=None, initial=None, options
     values = torch.zeros_like(rhs) if values is None else values
     check(values, 'boundary values')
     project = lambda x: x.masked_fill(fixed, 0)
+    def precondition(residual):
+        value = residual/diagonal if preconditioner is None else preconditioner(residual)
+        if preconditioner is not None:
+            if value.shape != rhs.shape or value.dtype != rhs.dtype or value.device != rhs.device:
+                raise ValueError('preconditioner must return the rhs shape, dtype and device')
+        return project(value)
     lift = torch.where(fixed, values, 0)
     reduced_rhs = project(rhs-action(lift))
     if not torch.isfinite(reduced_rhs).all():
@@ -72,7 +80,7 @@ def pcg(action, rhs, diagonal, *, fixed=None, values=None, initial=None, options
     residual = project(rhs-action(lift+correction))
     if norm(residual) <= tol:
         return lift+correction, SolveInfo(0, norm(residual), rhs_norm, tol)
-    z = residual/diagonal
+    z = precondition(residual)
     direction = z.clone()
     rz = (residual*z).sum()
     active = torch.ones((), dtype=torch.bool, device=rhs.device)
@@ -108,7 +116,7 @@ def pcg(action, rhs, diagonal, *, fixed=None, values=None, initial=None, options
                 return lift+correction, SolveInfo(iteration, true_norm, rhs_norm, tol)
             restart = True
             active = torch.ones_like(active)
-        z = residual/diagonal
+        z = precondition(residual)
         next_rz = (residual*z).sum()
         if restart:
             direction = z
