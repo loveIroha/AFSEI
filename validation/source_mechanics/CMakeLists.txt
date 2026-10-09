@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 3.16)
+project(afsei_source_mechanics LANGUAGES C CXX)
+find_package(DOLFIN REQUIRED)
+include(${DOLFIN_USE_FILE})
+add_executable(afsei_source_mechanics oracle.cpp)
+target_include_directories(afsei_source_mechanics PRIVATE ${AFSEI_REFERENCE_INCLUDE})
+target_link_libraries(afsei_source_mechanics ${DOLFIN_LIBRARIES})

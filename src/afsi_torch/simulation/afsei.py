@@ -32,7 +32,7 @@ def run(*,config=None,output=None,resume=None,duration_s=.002,device='cuda'):
     else:
         if any((folder/name).exists() for name in ('checkpoint.npz','report.json','history.csv')):
             raise ValueError('output contains a run; select a fresh output or resume')
-        config = config or AFSEIConfig()
+        config = config or AFSEIConfig.source()
         # The inherited passive model is used only as an input reader here.
         mesh = imported_model(config.fsi,device).mesh
         driver = AFSEIStepper(mesh,config)
@@ -88,6 +88,9 @@ def run(*,config=None,output=None,resume=None,duration_s=.002,device='cuda'):
             elapsed_seconds=progress['elapsed_seconds'],gpu=torch.cuda.get_device_name(driver.mesh.X.device),
             node_count=len(driver.mesh.X),cell_count=len(driver.mesh.cells),fluid_shape=driver.config.fsi.fluid.shape,
             direction_mapping=config.direction_mapping,stimulated_nodes=int(driver.stimulus_mask.sum()),
+            mechanics_profile=config.mechanics_profile,
+            source_mechanics_parameters_aligned=config.mechanics_profile == 'source',
+            mechanical_direction_discretization='cell-expression-equivalent DG0',
             config=asdict(config),last_state=last,solid_motion_advanced=state.fsi.step > 0,
             fluid_advanced=state.fsi.step > 0,
             ep_fsi_time_integration_implemented=True,three_field_integration_implemented=False,
@@ -96,9 +99,9 @@ def run(*,config=None,output=None,resume=None,duration_s=.002,device='cuda'):
             limitations=['reference geometry at first stimulus; no 8 mmHg preload',
                          'MAC outer-box zero-pressure boundaries; no physical AV/MV port seal',
                          'RCR and valve-event hooks not connected to the physical fluid boundary',
-                         'AFSI passive material and basal parameters retained',
-                         'mechanical active fiber uses AFSI DG0; source CG1 quadrature alignment pending',
-                         'partitioned EP then implicit FSI; not monolithic EP-FSI Newton'],
+                         'partitioned EP then implicit FSI; not monolithic EP-FSI Newton']
+                        + (['inherited mechanical coefficients; source profile not selected']
+                           if config.mechanics_profile != 'source' else []),
             checkpoint='checkpoint.npz',history='history.csv',progress=progress)
         atomic_json(folder/'report.json',report)
         return report

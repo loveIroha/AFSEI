@@ -1,5 +1,9 @@
 # 第二阶段：EP–GPB–Land 与隐式流固统一推进
 
+第三阶段补充审计：[源力学对齐](SOURCE_MECHANICS_PHASE3.md)。原力学直接绑定单元表达式，
+DG0 与其相符；以下第二阶段的“力学 CG1 待接入”推断已纠正。
+本页的数值验证记录仍保留当时继承的 AFSI 材料与积分规则。
+
 ## 已实现的范围
 
 单域 PDE 继续使用 PyTorch 稀疏矩阵与 PCG；GPB/Land 继续使用 CUDA 内核。
@@ -63,8 +67,9 @@ AFSI-only 检查点不能用于恢复 EP。
 默认 `direction_mapping='source-serial-cg1'` 作用于 EP PDE 与刺激。
 `afsi-dg0` 可显式恢复第一阶段的方向与内膜节点设置。
 未验证原项目多 MPI 分区下的覆盖顺序，不宣称与并行原运行逐点一致。
-当前力学纤维和主动应力仍用 AFSI 的 DG0 单元方向；原 CG1 纤维在主动应力
-积分点的空间插值仍需接入、核对，当前数值一致性结论只覆盖 EP CG1 映射与载荷公式。
+第三阶段确认：`main.cpp` 将单元表达式 `f0/s0` 直接绑定到力学残差、切线和伸长投影。
+全局 `fiber_func/sheet_func` 只用于 EP。因此力学 DG0 已与源绑定相符；
+力与切线的直接组装验证见第三阶段，不能将 EP 的 CG1 覆盖规则推广到力学。
 
 FEniCS oracle 需要独立环境。服务器可按以下方式生成 CSV：
 
@@ -139,12 +144,12 @@ Land 重置保持 GPB、运行脚本失败保存、连续运行与重启一致�
 
 当前初态没有 8 mmHg 预充盈，MAC 外箱为零压力开放边界。
 基底封口、真实 AV/MV 通道、物理端口压力和 RCR 尚未接入，
-也未完成源项目的被动材料、基底参数及 CG1 主动应力空间离散对齐。
+本阶段尚未对齐的材料和基底参数已在第三阶段处理；力学 DG0 的源绑定也已核对。
 因此报告保持 `three_field_integration_implemented=false`、
 `windkessel_ports_connected=false`，同时单列已完成的
 `ep_fsi_time_integration_implemented=true`。
 
-下一阶段需要先审计并对齐力学离散和参数，再建立可验证的腔室封闭与物理端口。
+后续需要建立可验证的腔室封闭与物理端口。
 RCR 必须由实际端口通量驱动：
 
 \[

@@ -16,6 +16,8 @@ def main():
     p.add_argument('--fluid-shape',type=int,default=32,help='coarse-grid integration check; not a resolution study')
     p.add_argument('--mechanical-dt-ms',type=float,default=.1)
     p.add_argument('--start-ms',type=float,default=500.)
+    p.add_argument('--mechanics',choices=('source','inherited'),default='source',
+                   help='fresh runs: source EP-project parameters or inherited AFSI parameters; resume restores saved parameters')
     args = p.parse_args()
     config = None
     if not args.resume:
@@ -23,11 +25,13 @@ def main():
         fsi = PaperLVConfig(source_dir=args.source_dir,time=TimeConfig(dt,dt),
             fluid=FluidConfig((args.fluid_shape,)*3,(13.,)*3,rho=1.,mu=.04),nonlinear_solver='newton',
             output=OutputConfig(log_every=5,checkpoint_every=20,output_every=20,write_vtk=False))
-        config = AFSEIConfig(fsi=fsi,start_time_s=args.start_ms/1000)
+        factory = AFSEIConfig.source if args.mechanics == 'source' else AFSEIConfig
+        config = factory(fsi=fsi,start_time_s=args.start_ms/1000)
     report = run(config=config,output=args.output,resume=args.resume,duration_s=args.duration_ms/1000)
     print(json.dumps({k:report[k] for k in ('status','accepted_steps','reached_time_s','ep_steps',
         'ode_substeps','rejected_attempts','elapsed_seconds','fluid_shape','direction_mapping',
-        'ep_fsi_time_integration_implemented','windkessel_ports_connected','three_field_integration_implemented')},indent=2))
+        'mechanics_profile','source_mechanics_parameters_aligned','ep_fsi_time_integration_implemented',
+        'windkessel_ports_connected','three_field_integration_implemented')},indent=2))
 
 
 if __name__ == '__main__': main()

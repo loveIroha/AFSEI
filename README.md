@@ -6,7 +6,9 @@ AFSEI：电–流固三场耦合（electrophysiology–fluid–solid interaction
 已实现 PyTorch 单域 PDE、CUDA GPB/Land、积分点主动载荷，并接入隐式流固时间推进。
 支持完整物理状态的失败回退、减小步长重试和断点续算。
 真实左心室的短程推进已验证；完整心动周期、预充盈和 Windkessel 物理端口仍待实现。
-详细记录见 [第一阶段](docs/EP_LAND_PHASE1.md) 和 [第二阶段](docs/EP_FSI_PHASE2.md)。
+已进一步对齐源项目的材料、基底参数及积分规则，并用重新生成的原 UFL 组装力与切线核对。
+详细记录见 [第一阶段](docs/EP_LAND_PHASE1.md)、[第二阶段](docs/EP_FSI_PHASE2.md)
+和 [源力学对齐](docs/SOURCE_MECHANICS_PHASE3.md)。
 
 ## 来源
 
@@ -47,7 +49,7 @@ python scripts/run_afsei.py --duration-ms 2 --output results/my_ep_fsi_2ms
 python scripts/run_afsei.py --resume results/my_ep_fsi_2ms/checkpoint.npz --duration-ms 0.2
 
 # 相关回归检查
-python -m pytest -q tests/test_afsei_driver.py tests/test_ep_*.py tests/test_paper_lv.py
+python -m pytest -q tests/test_source_mechanics.py tests/test_afsei_driver.py tests/test_ep_*.py tests/test_paper_lv.py
 ```
 
 新建运行需要未使用的输出目录；重启的 `--duration-ms` 是追加时间。
@@ -55,9 +57,26 @@ python -m pytest -q tests/test_afsei_driver.py tests/test_ep_*.py tests/test_pap
 流固步长 `0.1 ms`。失败可退至一个 EP 步长；所有物理状态只在完整步骤成功后发布。
 结果包括 `history.csv`、`checkpoint.npz`、`report.json`。
 
-第二阶段默认采用经过实际串行 DOLFIN 核对的 EP CG1 方向与刺激映射，
-因此电位结果会与第一阶段 DG0/内膜节点检查不同。主动应力公式保持源模型的
-Land 与长度依赖形式；力学纤维离散仍为 AFSI DG0，尚未完成源 CG1 主动应力积分对齐。
+EP 默认采用经实际串行 DOLFIN 核对的全局 CG1 方向与刺激映射，
+因此电位结果会与第一阶段 DG0/内膜节点检查不同。
+原项目的力学形式直接绑定单元纤维表达式，DG0 与它相符；第三阶段通过实际
+原 UFL 组装核对了被动/主动载荷、完整切线及伸长投影。
+此前第二阶段文档提出的“力学应改为全局 CG1”推断已纠正。
+
+新建 CLI 运行默认 `--mechanics source`，使用源项目材料与基底配置；
+`--mechanics inherited` 可显式保留 AFSI 配置。
+Python API 使用 `AFSEIConfig.source(fsi=...)` 选择源配置。
+旧检查点自动保留其原始参数和积分规则，续算不会改用新材料。
+因此对照新配置时请新建输出目录，不要从旧材料的检查点开始。
+
+服务器上已生成力学参考数据，可直接检查：
+
+```bash
+python scripts/check_afsei_mechanics.py
+```
+
+新检出仓库需要先运行 `bash scripts/prepare_afsei_mechanics_reference.sh`，
+此步骤使用现有独立 FEniCS 环境，不向 AFSEI 环境安装 DOLFIN。
 
 当前运行从参考几何的首次刺激时刻开始，**没有完成 8 mmHg 预充盈，也没有连接
 AV/MV/Windkessel 物理端口**。外箱仍为零压力开放边界。

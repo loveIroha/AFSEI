@@ -2,9 +2,8 @@
 
 No prescribed waveform is read. Fluid pressure acts via the fluid/solid
 interface; the adapter applies zero additional endocardial pressure traction.
-A complete driver must still define physical ports, preload and accept/retry
-state publication. Existing demo configuration/checkpoint formats do not
-serialize these extra EP/Land fields yet.
+The AFSEI driver publishes accepted EP/Land state and its own checkpoints.
+Physical circulation ports and preload remain separate pending components.
 """
 from dataclasses import dataclass
 from math import isfinite
@@ -22,8 +21,15 @@ class InterfaceLoads:
 
 class EPDrivenPaperSolid(PaperLVSolid):
     """Prepared per-trial solid with fixed EP states and differentiable Land Ta."""
-    def __init__(self, mesh, config, active_load):
+    def __init__(self, mesh, config, active_load,*,source_quadrature=False):
         super().__init__(mesh, config)
+        if source_quadrature:
+            from .source_mechanics import source_basal_surface
+            self.base = source_basal_surface(self.base,mesh.X)
+            R = self.base.reference_positions[...,:2]-mesh.X.new_tensor(config.basal_center_cm)
+            if (R.square().sum(-1) <= torch.finfo(mesh.X.dtype).eps).any():
+                raise ValueError('source radial basal constraint undefined at its center')
+            self.radial = R/R.square().sum(-1,keepdim=True).sqrt()
         g = active_load.geometry
         if (g.node_count != len(mesh.X) or g.cells.device != mesh.X.device
                 or not torch.equal(g.cells, mesh.cells)

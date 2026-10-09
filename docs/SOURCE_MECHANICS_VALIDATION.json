@@ -1,0 +1,995 @@
+{
+  "date": "2026-10-09",
+  "source_commit": "5bdde73c6be10cefadb005a0fcec5fdb6521f336",
+  "source_ufl_sha256": "132771eb69155111c9d930dd35b2a418171bfd016cb699fa2a4fc3da4baa7bc7",
+  "source_main_sha256": "5391e40862bfbb7387d835b9a0a5a95375a4a1292f4dd8c1a92e3dd76f2247fd",
+  "checked_in_legacy_header_sha256": "df762e2031d847ec5847265fff11b383c78dea8802aa0a852a38b424aa0a94ac",
+  "checked_in_legacy_header_used_for_mechanical_oracle": false,
+  "reference_header_regenerated_from_pinned_ufl": true,
+  "tests": {
+    "command": "pytest -q tests/test_source_mechanics.py tests/test_afsei_driver.py tests/test_ep_*.py tests/test_paper_lv.py --disable-warnings --maxfail=1",
+    "passed": 74,
+    "elapsed_seconds": 81.2
+  },
+  "mechanics": {
+    "passed": true,
+    "source_commit": "5bdde73c6be10cefadb005a0fcec5fdb6521f336",
+    "scope": "regenerated source UFL residual, tangent and stretch projection; zero pressure",
+    "node_count": 26889,
+    "cell_count": 135430,
+    "device": "cuda",
+    "gpu": "NVIDIA GeForce RTX 4090",
+    "mechanics_profile": "source",
+    "cases": {
+      "passive": {
+        "force": {
+          "passed": true,
+          "relative_l2_error": 2.9543782706531677e-13,
+          "max_absolute_error": 4.051173618790926e-09,
+          "reference_max_absolute": 18479.100684964746,
+          "relative_tolerance": 1e-09,
+          "absolute_tolerance": 1e-06
+        },
+        "force_jvp": {
+          "passed": true,
+          "relative_l2_error": 1.91277384490116e-14,
+          "max_absolute_error": 1.291482476517558e-10,
+          "reference_max_absolute": 10596.856467826132,
+          "relative_tolerance": 1e-09,
+          "absolute_tolerance": 1e-06
+        },
+        "assembled_tangent": {
+          "passed": true,
+          "relative_l2_error": 2.358628143704086e-14,
+          "max_absolute_error": 1.5370460459962487e-10,
+          "reference_max_absolute": 10596.856467826132,
+          "relative_tolerance": 1e-09,
+          "absolute_tolerance": 1e-06
+        },
+        "stretch_projection_rhs": {
+          "passed": true,
+          "relative_l2_error": 8.650389809500393e-16,
+          "max_absolute_error": 1.3010426069826053e-17,
+          "reference_max_absolute": 0.005779299566464836,
+          "relative_tolerance": 1e-10,
+          "absolute_tolerance": 1e-12
+        }
+      },
+      "land": {
+        "force": {
+          "passed": true,
+          "relative_l2_error": 3.0828468406029206e-13,
+          "max_absolute_error": 4.2847432268899865e-09,
+          "reference_max_absolute": 19052.13713177438,
+          "relative_tolerance": 1e-09,
+          "absolute_tolerance": 1e-06
+        },
+        "force_jvp": {
+          "passed": true,
+          "relative_l2_error": 2.0463834186642243e-14,
+          "max_absolute_error": 1.2893508483102778e-10,
+          "reference_max_absolute": 10639.985635311585,
+          "relative_tolerance": 1e-09,
+          "absolute_tolerance": 1e-06
+        },
+        "active_force": {
+          "passed": true,
+          "relative_l2_error": 5.001947611087601e-13,
+          "max_absolute_error": 1.1092140539403772e-09,
+          "reference_max_absolute": 4671.4691175756725,
+          "relative_tolerance": 1e-09,
+          "absolute_tolerance": 1e-06
+        },
+        "active_force_jvp": {
+          "passed": true,
+          "relative_l2_error": 4.2256041815705363e-13,
+          "max_absolute_error": 1.5156143007288847e-10,
+          "reference_max_absolute": 773.2797127562872,
+          "relative_tolerance": 1e-09,
+          "absolute_tolerance": 1e-06
+        },
+        "assembled_tangent": {
+          "passed": true,
+          "relative_l2_error": 3.0186640072282436e-14,
+          "max_absolute_error": 1.964508555829525e-10,
+          "reference_max_absolute": 10639.985635311585,
+          "relative_tolerance": 1e-09,
+          "absolute_tolerance": 1e-06
+        },
+        "stretch_projection_rhs": {
+          "passed": true,
+          "relative_l2_error": 8.637763227432867e-16,
+          "max_absolute_error": 1.3010426069826053e-17,
+          "reference_max_absolute": 0.005779299566464836,
+          "relative_tolerance": 1e-10,
+          "absolute_tolerance": 1e-12
+        }
+      },
+      "frozen": {
+        "force": {
+          "passed": true,
+          "relative_l2_error": 2.959882919973616e-13,
+          "max_absolute_error": 4.07183620154683e-09,
+          "reference_max_absolute": 18702.6743712998,
+          "relative_tolerance": 1e-09,
+          "absolute_tolerance": 1e-06
+        },
+        "force_jvp": {
+          "passed": true,
+          "relative_l2_error": 1.930868193442506e-14,
+          "max_absolute_error": 1.240465508089983e-10,
+          "reference_max_absolute": 10597.879068423052,
+          "relative_tolerance": 1e-09,
+          "absolute_tolerance": 1e-06
+        },
+        "active_force": {
+          "passed": true,
+          "relative_l2_error": 4.99298999981685e-13,
+          "max_absolute_error": 3.871605258609634e-10,
+          "reference_max_absolute": 1489.3904631973471,
+          "relative_tolerance": 1e-09,
+          "absolute_tolerance": 1e-06
+        },
+        "active_force_jvp": {
+          "passed": true,
+          "relative_l2_error": 4.954633267218669e-12,
+          "max_absolute_error": 1.3983181279542123e-10,
+          "reference_max_absolute": 54.991107139736414,
+          "relative_tolerance": 1e-09,
+          "absolute_tolerance": 1e-06
+        },
+        "assembled_tangent": {
+          "passed": true,
+          "relative_l2_error": 2.875853409592129e-14,
+          "max_absolute_error": 2.02817318495363e-10,
+          "reference_max_absolute": 10597.879068423052,
+          "relative_tolerance": 1e-09,
+          "absolute_tolerance": 1e-06
+        },
+        "stretch_projection_rhs": {
+          "passed": true,
+          "relative_l2_error": 8.648840278524224e-16,
+          "max_absolute_error": 1.3010426069826053e-17,
+          "reference_max_absolute": 0.005779299566464836,
+          "relative_tolerance": 1e-10,
+          "absolute_tolerance": 1e-12
+        }
+      }
+    },
+    "global_cg1_negative_control_relative_force_difference": 0.10178007314053224,
+    "source_mechanical_direction_binding": "cell-dependent Expression; DG0-equivalent",
+    "source_ep_direction_binding": "globally interpolated CG1 Function",
+    "regenerated_ufl_sha256": "132771eb69155111c9d930dd35b2a418171bfd016cb699fa2a4fc3da4baa7bc7",
+    "regenerated_header_sha256": "067c6ecdbe22f6c67e8bf43cc90916eed3a39d9b71d8506cb241efc743cf0bf8",
+    "assembled_tangent_verified": true,
+    "physical_ports_connected": false,
+    "full_cardiac_cycle_verified": false,
+    "elapsed_seconds": 15.258437047712505
+  },
+  "real_lv_source_short_run": {
+    "status": "completed",
+    "accepted_steps": 20,
+    "reached_time_s": 0.502,
+    "reached_ep_tick": 10040,
+    "target_ep_tick": 10040,
+    "ep_steps": 40,
+    "ode_substeps": 1000,
+    "rejected_attempts": 0,
+    "elapsed_seconds": 50.41176884435117,
+    "gpu": "NVIDIA GeForce RTX 4090",
+    "node_count": 26889,
+    "cell_count": 135430,
+    "fluid_shape": [
+      32,
+      32,
+      32
+    ],
+    "direction_mapping": "source-serial-cg1",
+    "stimulated_nodes": 2502,
+    "mechanics_profile": "source",
+    "source_mechanics_parameters_aligned": true,
+    "mechanical_direction_discretization": "cell-expression-equivalent DG0",
+    "config": {
+      "fsi": {
+        "source_dir": "/mnt/large2/gjh/realistic_left_ventricle",
+        "mesh_file": "mesh_scale.xdmf",
+        "boundary_file": "boundaries.xml",
+        "fiber_files": [
+          "fibers_0.xml",
+          "fibers_1.xml",
+          "fibers_2.xml"
+        ],
+        "sheet_files": [
+          "sheets_0.xml",
+          "sheets_1.xml",
+          "sheets_2.xml"
+        ],
+        "source_units": "cm",
+        "endo_tag": 2,
+        "epi_tag": 1,
+        "base_tag": 3,
+        "basal_center_cm": [
+          7.30042735,
+          7.6448494
+        ],
+        "beta": 1000000.0,
+        "solid_degree": 5,
+        "interaction_degree": 2,
+        "time": {
+          "dt": 0.0001,
+          "end_time": 0.0001
+        },
+        "fluid": {
+          "shape": [
+            32,
+            32,
+            32
+          ],
+          "lengths": [
+            13.0,
+            13.0,
+            13.0
+          ],
+          "origin": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rho": 1.0,
+          "mu": 0.04
+        },
+        "material": {
+          "a": 2400.0,
+          "b": 5.08,
+          "a_f": 14600.0,
+          "b_f": 4.15,
+          "a_s": 8700.0,
+          "b_s": 1.6,
+          "a_fs": 3000.0,
+          "b_fs": 1.3,
+          "kappa": 5000000.0,
+          "active_stretch_slope": 4.9
+        },
+        "loads": {
+          "target_mmhg": 8.0,
+          "ramp_seconds": 0.8
+        },
+        "load_protocol": "inflation",
+        "cyclic_loads": {
+          "period": 0.8,
+          "pressure_kpa": 1.067,
+          "pressure_increment_kpa": 13.46,
+          "tension_kpa": 84.26
+        },
+        "flow": {
+          "convection": true,
+          "helmholtz_rtol": 1e-12,
+          "helmholtz_atol": 1e-13,
+          "max_sweeps": 500,
+          "check_every": 4,
+          "helmholtz_backend": "reference"
+        },
+        "pressure_solver": {
+          "rtol": 1e-10,
+          "atol": 1e-12,
+          "max_cycles": 100,
+          "smooth": 4,
+          "check_every": 2
+        },
+        "mass_solver": {
+          "rtol": 1e-12,
+          "atol": 1e-13,
+          "max_iterations": 500,
+          "recompute_every": 40,
+          "check_every": 4
+        },
+        "interaction_quadrature": {
+          "mode": "adaptive",
+          "point_density": 2.0,
+          "max_order": 22,
+          "max_points": 12000000,
+          "rule_family": "xiao-gimbutas",
+          "transfer_backend": "fused",
+          "stencil_backend": "shared",
+          "prepare_backend": "triton",
+          "reuse_stencil_buffers": true,
+          "shared_execution": "reference"
+        },
+        "execution": {
+          "execution_backend": "fused",
+          "pressure_backend": "graph",
+          "solid_backend": "reference",
+          "mass_backend": "graph",
+          "coupling_backend": "optimized",
+          "warm_start": true,
+          "ib_backend": "reference"
+        },
+        "nonlinear_solver": "newton",
+        "newton_preconditioner": "none",
+        "ib_response_backend": "quadrature",
+        "ib_csr_assembly_backend": "coalesce",
+        "ib_csr_contraction_backend": "sites",
+        "ib_csr_chunk_entries": 1048576,
+        "ib_csr_max_entries": 32000000,
+        "support_backend": "vertices",
+        "nonlinear": {
+          "rtol": 1e-06,
+          "atol": 1e-09,
+          "max_iterations": 15,
+          "max_backtracks": 20,
+          "armijo": 0.0001,
+          "linear": {
+            "rtol": 0.001,
+            "atol": 1e-11,
+            "restart": 50,
+            "max_iterations": 240,
+            "check_every": 5,
+            "check_policy": "periodic",
+            "true_check_interval": 25
+          },
+          "linear_tolerance_fraction": 0.05,
+          "linear_forcing": "fixed"
+        },
+        "anderson": {
+          "max_iterations": 6,
+          "history_size": 4,
+          "growth_limit": 4.0,
+          "regularization": 1e-12,
+          "extra_iterations": 0,
+          "extension_window": 3,
+          "extension_ratio": 0.8,
+          "stall_iterations": 0,
+          "stall_ratio": 0.95
+        },
+        "max_courant": 1.0,
+        "output": {
+          "log_every": 5,
+          "checkpoint_every": 20,
+          "output_every": 20,
+          "write_vtk": false,
+          "fluid_fields": true
+        }
+      },
+      "ep": {
+        "capacitance_uf_per_cm2": 1.0,
+        "surface_to_volume_per_cm": 0.1,
+        "conductivity_us_per_cm": [
+          0.117,
+          0.039,
+          0.039
+        ]
+      },
+      "protocol": {
+        "dt_ep_s": 5e-05,
+        "pulse_starts_s": [
+          0.5,
+          1.3
+        ],
+        "pulse_width_s": 0.002,
+        "amplitude_ua_per_cm2": 25.0,
+        "relaxation_s": 0.08,
+        "freeze_delay_s": 0.2,
+        "stable_s": 0.02,
+        "vm_tolerance_mv": 1.0,
+        "calcium_rest_relative_tolerance": 0.1,
+        "calcium_drift_relative_tolerance": 0.01,
+        "freeze_enabled": true
+      },
+      "dt_ode_ms": 0.002,
+      "start_time_s": 0.5,
+      "max_retries": 4,
+      "direction_mapping": "source-serial-cg1",
+      "mechanics_profile": "source"
+    },
+    "last_state": {
+      "step": 20,
+      "ep_tick": 10040,
+      "time_s": 0.502,
+      "accepted_dt_s": 0.0001,
+      "activation_mode": "land",
+      "voltage_min_mv": -87.93172291959684,
+      "voltage_max_mv": 61.61680149031396,
+      "calcium_min_um": 0.10701161084965093,
+      "calcium_max_um": 0.10751797615941741,
+      "tension_min_cgs": 0.2121606536350433,
+      "tension_max_cgs": 0.21220779119486227,
+      "maximum_displacement_cm": 7.044723027149757e-09,
+      "maximum_fluid_velocity_cm_per_s": 2.2361460151410575e-05,
+      "ep_steps": 2,
+      "total_ep_steps": 40,
+      "nonlinear_iterations": 1,
+      "nonlinear_residual": 9.597113411789453e-15,
+      "nonlinear_tolerance": 1e-09,
+      "divergence_l2": 7.233291220595832e-15,
+      "power_error": 6.737065942554084e-14,
+      "rejected_attempts": 0,
+      "cavity_volume_ml": 68.33034838682279,
+      "wall_volume_cm3": 76.92203001735514,
+      "wall_volume_ratio": 0.9999999999944298,
+      "minimum_detF": 0.9999999963831872,
+      "maximum_detF": 1.000000003487625,
+      "minimum_fiber_stretch": 0.9999991797021506,
+      "maximum_fiber_stretch": 1.0000008276817207,
+      "minimum_active_stretch_multiplier": 1.0,
+      "negative_active_multiplier_cell_count": 0,
+      "max_basal_constraint_cm": 4.777093555847587e-09,
+      "max_total_displacement_cm": 7.294069807478937e-09,
+      "minimum_land_tension_cgs": 0.2121606536350433,
+      "maximum_land_tension_cgs": 0.21220779119486227,
+      "additional_endocardial_pressure_cgs": 0.0
+    },
+    "solid_motion_advanced": true,
+    "fluid_advanced": true,
+    "ep_fsi_time_integration_implemented": true,
+    "three_field_integration_implemented": false,
+    "windkessel_ports_connected": false,
+    "source_full_cycle_reproduced": false,
+    "preload_performed": false,
+    "physical_valve_events_detected": false,
+    "limitations": [
+      "reference geometry at first stimulus; no 8 mmHg preload",
+      "MAC outer-box zero-pressure boundaries; no physical AV/MV port seal",
+      "RCR and valve-event hooks not connected to the physical fluid boundary",
+      "partitioned EP then implicit FSI; not monolithic EP-FSI Newton"
+    ],
+    "checkpoint": "checkpoint.npz",
+    "history": "history.csv",
+    "progress": {
+      "ep_steps": 40,
+      "ode_substeps": 1000,
+      "elapsed_seconds": 50.41176884435117
+    }
+  },
+  "real_lv_source_checkpoint_resume": {
+    "status": "completed",
+    "accepted_steps": 22,
+    "reached_time_s": 0.5022,
+    "reached_ep_tick": 10044,
+    "target_ep_tick": 10044,
+    "ep_steps": 44,
+    "ode_substeps": 1100,
+    "rejected_attempts": 0,
+    "elapsed_seconds": 63.41466275881976,
+    "gpu": "NVIDIA GeForce RTX 4090",
+    "node_count": 26889,
+    "cell_count": 135430,
+    "fluid_shape": [
+      32,
+      32,
+      32
+    ],
+    "direction_mapping": "source-serial-cg1",
+    "stimulated_nodes": 2502,
+    "mechanics_profile": "source",
+    "source_mechanics_parameters_aligned": true,
+    "mechanical_direction_discretization": "cell-expression-equivalent DG0",
+    "config": {
+      "fsi": {
+        "source_dir": "/mnt/large2/gjh/realistic_left_ventricle",
+        "mesh_file": "mesh_scale.xdmf",
+        "boundary_file": "boundaries.xml",
+        "fiber_files": [
+          "fibers_0.xml",
+          "fibers_1.xml",
+          "fibers_2.xml"
+        ],
+        "sheet_files": [
+          "sheets_0.xml",
+          "sheets_1.xml",
+          "sheets_2.xml"
+        ],
+        "source_units": "cm",
+        "endo_tag": 2,
+        "epi_tag": 1,
+        "base_tag": 3,
+        "basal_center_cm": [
+          7.30042735,
+          7.6448494
+        ],
+        "beta": 1000000.0,
+        "solid_degree": 5,
+        "interaction_degree": 2,
+        "time": {
+          "dt": 0.0001,
+          "end_time": 0.0001
+        },
+        "fluid": {
+          "shape": [
+            32,
+            32,
+            32
+          ],
+          "lengths": [
+            13.0,
+            13.0,
+            13.0
+          ],
+          "origin": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rho": 1.0,
+          "mu": 0.04
+        },
+        "material": {
+          "a": 2400.0,
+          "b": 5.08,
+          "a_f": 14600.0,
+          "b_f": 4.15,
+          "a_s": 8700.0,
+          "b_s": 1.6,
+          "a_fs": 3000.0,
+          "b_fs": 1.3,
+          "kappa": 5000000.0,
+          "active_stretch_slope": 4.9
+        },
+        "loads": {
+          "target_mmhg": 8.0,
+          "ramp_seconds": 0.8
+        },
+        "load_protocol": "inflation",
+        "cyclic_loads": {
+          "period": 0.8,
+          "pressure_kpa": 1.067,
+          "pressure_increment_kpa": 13.46,
+          "tension_kpa": 84.26
+        },
+        "flow": {
+          "convection": true,
+          "helmholtz_rtol": 1e-12,
+          "helmholtz_atol": 1e-13,
+          "max_sweeps": 500,
+          "check_every": 4,
+          "helmholtz_backend": "reference"
+        },
+        "pressure_solver": {
+          "rtol": 1e-10,
+          "atol": 1e-12,
+          "max_cycles": 100,
+          "smooth": 4,
+          "check_every": 2
+        },
+        "mass_solver": {
+          "rtol": 1e-12,
+          "atol": 1e-13,
+          "max_iterations": 500,
+          "recompute_every": 40,
+          "check_every": 4
+        },
+        "interaction_quadrature": {
+          "mode": "adaptive",
+          "point_density": 2.0,
+          "max_order": 22,
+          "max_points": 12000000,
+          "rule_family": "xiao-gimbutas",
+          "transfer_backend": "fused",
+          "stencil_backend": "shared",
+          "prepare_backend": "triton",
+          "reuse_stencil_buffers": true,
+          "shared_execution": "reference"
+        },
+        "execution": {
+          "execution_backend": "fused",
+          "pressure_backend": "graph",
+          "solid_backend": "reference",
+          "mass_backend": "graph",
+          "coupling_backend": "optimized",
+          "warm_start": true,
+          "ib_backend": "reference"
+        },
+        "nonlinear_solver": "newton",
+        "newton_preconditioner": "none",
+        "ib_response_backend": "quadrature",
+        "ib_csr_assembly_backend": "coalesce",
+        "ib_csr_contraction_backend": "sites",
+        "ib_csr_chunk_entries": 1048576,
+        "ib_csr_max_entries": 32000000,
+        "support_backend": "vertices",
+        "nonlinear": {
+          "rtol": 1e-06,
+          "atol": 1e-09,
+          "max_iterations": 15,
+          "max_backtracks": 20,
+          "armijo": 0.0001,
+          "linear": {
+            "rtol": 0.001,
+            "atol": 1e-11,
+            "restart": 50,
+            "max_iterations": 240,
+            "check_every": 5,
+            "check_policy": "periodic",
+            "true_check_interval": 25
+          },
+          "linear_tolerance_fraction": 0.05,
+          "linear_forcing": "fixed"
+        },
+        "anderson": {
+          "max_iterations": 6,
+          "history_size": 4,
+          "growth_limit": 4.0,
+          "regularization": 1e-12,
+          "extra_iterations": 0,
+          "extension_window": 3,
+          "extension_ratio": 0.8,
+          "stall_iterations": 0,
+          "stall_ratio": 0.95
+        },
+        "max_courant": 1.0,
+        "output": {
+          "log_every": 5,
+          "checkpoint_every": 20,
+          "output_every": 20,
+          "write_vtk": false,
+          "fluid_fields": true
+        }
+      },
+      "ep": {
+        "capacitance_uf_per_cm2": 1.0,
+        "surface_to_volume_per_cm": 0.1,
+        "conductivity_us_per_cm": [
+          0.117,
+          0.039,
+          0.039
+        ]
+      },
+      "protocol": {
+        "dt_ep_s": 5e-05,
+        "pulse_starts_s": [
+          0.5,
+          1.3
+        ],
+        "pulse_width_s": 0.002,
+        "amplitude_ua_per_cm2": 25.0,
+        "relaxation_s": 0.08,
+        "freeze_delay_s": 0.2,
+        "stable_s": 0.02,
+        "vm_tolerance_mv": 1.0,
+        "calcium_rest_relative_tolerance": 0.1,
+        "calcium_drift_relative_tolerance": 0.01,
+        "freeze_enabled": true
+      },
+      "dt_ode_ms": 0.002,
+      "start_time_s": 0.5,
+      "max_retries": 4,
+      "direction_mapping": "source-serial-cg1",
+      "mechanics_profile": "source"
+    },
+    "last_state": {
+      "step": 22,
+      "ep_tick": 10044,
+      "time_s": 0.5022,
+      "accepted_dt_s": 0.0001,
+      "activation_mode": "land",
+      "voltage_min_mv": -88.79701164338904,
+      "voltage_max_mv": 62.88626934543448,
+      "calcium_min_um": 0.10700854785374535,
+      "calcium_max_um": 0.10764627989596816,
+      "tension_min_cgs": 0.3031616845994856,
+      "tension_max_cgs": 0.3032590166616783,
+      "maximum_displacement_cm": 1.073850430799439e-08,
+      "maximum_fluid_velocity_cm_per_s": 3.3791720399627656e-05,
+      "ep_steps": 2,
+      "total_ep_steps": 44,
+      "nonlinear_iterations": 1,
+      "nonlinear_residual": 6.974534885449065e-15,
+      "nonlinear_tolerance": 1e-09,
+      "divergence_l2": 1.0302827082838817e-14,
+      "power_error": 9.36194413550355e-14,
+      "rejected_attempts": 0,
+      "cavity_volume_ml": 68.33034837017773,
+      "wall_volume_cm3": 76.92203001736794,
+      "wall_volume_ratio": 0.9999999999945962,
+      "minimum_detF": 0.9999999944161055,
+      "maximum_detF": 1.000000005579593,
+      "minimum_fiber_stretch": 0.9999991797236052,
+      "maximum_fiber_stretch": 1.0000008272325698,
+      "minimum_active_stretch_multiplier": 1.0,
+      "negative_active_multiplier_cell_count": 0,
+      "max_basal_constraint_cm": 7.75448739681772e-09,
+      "max_total_displacement_cm": 1.1161027357103597e-08,
+      "minimum_land_tension_cgs": 0.3031616845994856,
+      "maximum_land_tension_cgs": 0.3032590166616783,
+      "additional_endocardial_pressure_cgs": 0.0
+    },
+    "solid_motion_advanced": true,
+    "fluid_advanced": true,
+    "ep_fsi_time_integration_implemented": true,
+    "three_field_integration_implemented": false,
+    "windkessel_ports_connected": false,
+    "source_full_cycle_reproduced": false,
+    "preload_performed": false,
+    "physical_valve_events_detected": false,
+    "limitations": [
+      "reference geometry at first stimulus; no 8 mmHg preload",
+      "MAC outer-box zero-pressure boundaries; no physical AV/MV port seal",
+      "RCR and valve-event hooks not connected to the physical fluid boundary",
+      "partitioned EP then implicit FSI; not monolithic EP-FSI Newton"
+    ],
+    "checkpoint": "checkpoint.npz",
+    "history": "history.csv",
+    "progress": {
+      "ep_steps": 44,
+      "ode_substeps": 1100,
+      "elapsed_seconds": 63.41466275881976
+    }
+  },
+  "real_lv_legacy_checkpoint_resume": {
+    "status": "completed",
+    "accepted_steps": 21,
+    "reached_time_s": 0.5021,
+    "reached_ep_tick": 10042,
+    "target_ep_tick": 10042,
+    "ep_steps": 42,
+    "ode_substeps": 1050,
+    "rejected_attempts": 0,
+    "elapsed_seconds": 107.07701888121665,
+    "gpu": "NVIDIA GeForce RTX 4090",
+    "node_count": 26889,
+    "cell_count": 135430,
+    "fluid_shape": [
+      32,
+      32,
+      32
+    ],
+    "direction_mapping": "source-serial-cg1",
+    "stimulated_nodes": 2502,
+    "mechanics_profile": "inherited",
+    "source_mechanics_parameters_aligned": false,
+    "mechanical_direction_discretization": "cell-expression-equivalent DG0",
+    "config": {
+      "fsi": {
+        "source_dir": "/mnt/large2/gjh/realistic_left_ventricle",
+        "mesh_file": "mesh_scale.xdmf",
+        "boundary_file": "boundaries.xml",
+        "fiber_files": [
+          "fibers_0.xml",
+          "fibers_1.xml",
+          "fibers_2.xml"
+        ],
+        "sheet_files": [
+          "sheets_0.xml",
+          "sheets_1.xml",
+          "sheets_2.xml"
+        ],
+        "source_units": "cm",
+        "endo_tag": 2,
+        "epi_tag": 1,
+        "base_tag": 3,
+        "basal_center_cm": [
+          7.5,
+          7.5
+        ],
+        "beta": 5000000.0,
+        "solid_degree": 5,
+        "interaction_degree": 2,
+        "time": {
+          "dt": 0.0001,
+          "end_time": 0.0001
+        },
+        "fluid": {
+          "shape": [
+            32,
+            32,
+            32
+          ],
+          "lengths": [
+            13.0,
+            13.0,
+            13.0
+          ],
+          "origin": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rho": 1.0,
+          "mu": 0.04
+        },
+        "material": {
+          "a": 2362.0,
+          "b": 10.81,
+          "a_f": 200370.0,
+          "b_f": 14.154,
+          "a_s": 37245.0,
+          "b_s": 5.1645,
+          "a_fs": 4108.0,
+          "b_fs": 11.3,
+          "kappa": 5000000.0,
+          "active_stretch_slope": 4.9
+        },
+        "loads": {
+          "target_mmhg": 8.0,
+          "ramp_seconds": 0.8
+        },
+        "load_protocol": "inflation",
+        "cyclic_loads": {
+          "period": 0.8,
+          "pressure_kpa": 1.067,
+          "pressure_increment_kpa": 13.46,
+          "tension_kpa": 84.26
+        },
+        "flow": {
+          "convection": true,
+          "helmholtz_rtol": 1e-12,
+          "helmholtz_atol": 1e-13,
+          "max_sweeps": 500,
+          "check_every": 4,
+          "helmholtz_backend": "reference"
+        },
+        "pressure_solver": {
+          "rtol": 1e-10,
+          "atol": 1e-12,
+          "max_cycles": 100,
+          "smooth": 4,
+          "check_every": 2
+        },
+        "mass_solver": {
+          "rtol": 1e-12,
+          "atol": 1e-13,
+          "max_iterations": 500,
+          "recompute_every": 40,
+          "check_every": 4
+        },
+        "interaction_quadrature": {
+          "mode": "adaptive",
+          "point_density": 2.0,
+          "max_order": 22,
+          "max_points": 12000000,
+          "rule_family": "xiao-gimbutas",
+          "transfer_backend": "fused",
+          "stencil_backend": "shared",
+          "prepare_backend": "triton",
+          "reuse_stencil_buffers": true,
+          "shared_execution": "reference"
+        },
+        "execution": {
+          "execution_backend": "fused",
+          "pressure_backend": "graph",
+          "solid_backend": "reference",
+          "mass_backend": "graph",
+          "coupling_backend": "optimized",
+          "warm_start": true,
+          "ib_backend": "reference"
+        },
+        "nonlinear_solver": "newton",
+        "newton_preconditioner": "none",
+        "ib_response_backend": "quadrature",
+        "ib_csr_assembly_backend": "coalesce",
+        "ib_csr_contraction_backend": "sites",
+        "ib_csr_chunk_entries": 1048576,
+        "ib_csr_max_entries": 32000000,
+        "support_backend": "vertices",
+        "nonlinear": {
+          "rtol": 1e-06,
+          "atol": 1e-09,
+          "max_iterations": 15,
+          "max_backtracks": 20,
+          "armijo": 0.0001,
+          "linear": {
+            "rtol": 0.001,
+            "atol": 1e-11,
+            "restart": 50,
+            "max_iterations": 240,
+            "check_every": 5,
+            "check_policy": "periodic",
+            "true_check_interval": 25
+          },
+          "linear_tolerance_fraction": 0.05,
+          "linear_forcing": "fixed"
+        },
+        "anderson": {
+          "max_iterations": 6,
+          "history_size": 4,
+          "growth_limit": 4.0,
+          "regularization": 1e-12,
+          "extra_iterations": 0,
+          "extension_window": 3,
+          "extension_ratio": 0.8,
+          "stall_iterations": 0,
+          "stall_ratio": 0.95
+        },
+        "max_courant": 1.0,
+        "output": {
+          "log_every": 5,
+          "checkpoint_every": 20,
+          "output_every": 20,
+          "write_vtk": false,
+          "fluid_fields": true
+        }
+      },
+      "ep": {
+        "capacitance_uf_per_cm2": 1.0,
+        "surface_to_volume_per_cm": 0.1,
+        "conductivity_us_per_cm": [
+          0.117,
+          0.039,
+          0.039
+        ]
+      },
+      "protocol": {
+        "dt_ep_s": 5e-05,
+        "pulse_starts_s": [
+          0.5,
+          1.3
+        ],
+        "pulse_width_s": 0.002,
+        "amplitude_ua_per_cm2": 25.0,
+        "relaxation_s": 0.08,
+        "freeze_delay_s": 0.2,
+        "stable_s": 0.02,
+        "vm_tolerance_mv": 1.0,
+        "calcium_rest_relative_tolerance": 0.1,
+        "calcium_drift_relative_tolerance": 0.01,
+        "freeze_enabled": true
+      },
+      "dt_ode_ms": 0.002,
+      "start_time_s": 0.5,
+      "max_retries": 4,
+      "direction_mapping": "source-serial-cg1",
+      "mechanics_profile": "inherited"
+    },
+    "last_state": {
+      "step": 21,
+      "ep_tick": 10042,
+      "time_s": 0.5021,
+      "accepted_dt_s": 0.0001,
+      "activation_mode": "land",
+      "voltage_min_mv": -88.47873840759362,
+      "voltage_max_mv": 62.22048622002901,
+      "calcium_min_um": 0.10701006345804326,
+      "calcium_max_um": 0.1075653366107775,
+      "tension_min_cgs": 0.2547952402861044,
+      "tension_max_cgs": 0.25487207953124164,
+      "maximum_displacement_cm": 3.499291123532089e-08,
+      "maximum_fluid_velocity_cm_per_s": 6.253982731749322e-05,
+      "ep_steps": 2,
+      "total_ep_steps": 42,
+      "nonlinear_iterations": 1,
+      "nonlinear_residual": 8.705502138110882e-15,
+      "nonlinear_tolerance": 1e-09,
+      "divergence_l2": 7.049960550797013e-16,
+      "power_error": 1.3771971031032587e-13,
+      "rejected_attempts": 0,
+      "cavity_volume_ml": 68.33034830997849,
+      "wall_volume_cm3": 76.92203001658704,
+      "wall_volume_ratio": 0.9999999999844444,
+      "minimum_detF": 0.999999980323141,
+      "maximum_detF": 1.0000000176488306,
+      "minimum_fiber_stretch": 0.9999991807425459,
+      "maximum_fiber_stretch": 1.0000008233335822,
+      "minimum_active_stretch_multiplier": 1.0,
+      "negative_active_multiplier_cell_count": 0,
+      "max_basal_constraint_cm": 1.8948185672905137e-08,
+      "max_total_displacement_cm": 3.582103140587358e-08,
+      "minimum_land_tension_cgs": 0.2547952402861044,
+      "maximum_land_tension_cgs": 0.25487207953124164,
+      "additional_endocardial_pressure_cgs": 0.0
+    },
+    "solid_motion_advanced": true,
+    "fluid_advanced": true,
+    "ep_fsi_time_integration_implemented": true,
+    "three_field_integration_implemented": false,
+    "windkessel_ports_connected": false,
+    "source_full_cycle_reproduced": false,
+    "preload_performed": false,
+    "physical_valve_events_detected": false,
+    "limitations": [
+      "reference geometry at first stimulus; no 8 mmHg preload",
+      "MAC outer-box zero-pressure boundaries; no physical AV/MV port seal",
+      "RCR and valve-event hooks not connected to the physical fluid boundary",
+      "partitioned EP then implicit FSI; not monolithic EP-FSI Newton",
+      "inherited mechanical coefficients; source profile not selected"
+    ],
+    "checkpoint": "checkpoint.npz",
+    "history": "history.csv",
+    "progress": {
+      "ep_steps": 42,
+      "ode_substeps": 1050,
+      "elapsed_seconds": 107.07701888121665
+    }
+  },
+  "physical_ports_connected": false,
+  "full_cardiac_cycle_verified": false,
+  "performance_benchmark": false
+}

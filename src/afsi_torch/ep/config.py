@@ -5,6 +5,7 @@ from ..paper_lv import PaperLVConfig
 from .monodomain import MonodomainParameters
 from .protocol import EPProtocol,ticks
 from .tissue import GPBLand
+from .source_mechanics import source_fsi_config,source_parameters_match
 
 
 @dataclass(frozen=True)
@@ -16,14 +17,23 @@ class AFSEIConfig:
     start_time_s: float = .5
     max_retries: int = 4
     direction_mapping: str = 'source-serial-cg1'
+    # Missing in old checkpoints: inherited preserves their exact parameters.
+    mechanics_profile: str = 'inherited'
+
+    @classmethod
+    def source(cls,*,fsi=None,**kwargs):
+        return cls(fsi=source_fsi_config(fsi or PaperLVConfig()),mechanics_profile='source',**kwargs)
 
     def __post_init__(self):
         if (not isinstance(self.fsi,PaperLVConfig) or not isinstance(self.ep,MonodomainParameters)
                 or not isinstance(self.protocol,EPProtocol) or self.fsi.solid_degree != 5
                 or type(self.max_retries) is not int or self.max_retries < 0
                 or self.direction_mapping not in ('source-serial-cg1','afsi-dg0')
+                or self.mechanics_profile not in ('inherited','source')
                 or not isfinite(self.start_time_s) or self.start_time_s < 0):
             raise ValueError('invalid AFSEI integration settings')
+        if self.mechanics_profile == 'source' and not source_parameters_match(self.fsi):
+            raise ValueError('source mechanics profile requires the pinned source material and basal coefficients')
         GPBLand(self.protocol.dt_ep_s,self.dt_ode_ms)
         start = ticks(self.start_time_s,self.protocol.dt_ep_s)
         if start > self.protocol.pulse_ticks[0]:
