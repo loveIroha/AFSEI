@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 3.16)
+project(afsei_ep_mapping LANGUAGES C CXX)
+find_package(DOLFIN REQUIRED)
+include(${DOLFIN_USE_FILE})
+add_executable(afsei_ep_mapping oracle.cpp)
+target_include_directories(afsei_ep_mapping PRIVATE ${AFSEI_REFERENCE_INCLUDE})
+target_link_libraries(afsei_ep_mapping ${DOLFIN_LIBRARIES})
