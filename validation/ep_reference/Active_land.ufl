@@ -1,0 +1,232 @@
+# ffc -l dolfin Active_land.ufl
+#
+# ===========================================================================
+# 主动收缩力：Land 收缩 + 闭瓣后 80 ms 人为线性松弛（混合模型）
+#
+#   - 保留本项目约定：X = 当前位置，F_def = grad(X)
+#   - 被动弹性（Holzapfel–Ogden）与不可压罚项保持不变
+#   - 主动应力由 Land 横桥状态 XS/XW + Zetas/Zetaw + 纤维伸长率 lmbda 驱动：
+#
+#       Ta = h_lambda * (Tref_land / rs_land) * ( XS*(Zetas+1) + XW*Zetaw )
+#       P += Ta_applied * ( 1 + 4.9*(sqrt(I_4f) - 1) ) * F_def * outer(f0,f0)
+#   - Ta_applied 在刺激至闭瓣期间采用上述 Land 值；之后使用冻结场线性归零。
+#
+#   - 力学积分点上的 Delta(lambda) 用当前/上一步的几何梯度求得，
+#     避免将单元积分点值与连续 P1 的节点投影值直接相减。
+#     GPB 反馈仍采用既有的 P1 L2 投影，属于不同空间的离散近似。
+#   - 额外提供 lmbda 的 L2 投影形式 (a_proj_lmbda, L_proj_lmbda)，
+#     供 main.cpp 在力学步后把 lmbda 投影到标量空间以便更新 Zetas/Zetaw
+# ===========================================================================
+
+# ===== 材料参数（被动，未修改）=====
+a = 2400
+b = 5.08
+a_f = 14600
+b_f = 4.15
+a_s = 8700
+b_s = 1.6
+a_fs = 3000
+b_fs = 1.3
+beta_s = 5e6
+
+# ===== Land (2017) 主动收缩力参数（与参考项目 ConstitutiveLawLV.ufl 一致）=====
+Tref_land  = 1.2e6    # dyn/cm²（= 120 kPa）
+rs_land    = 0.25     # 强结合横桥平衡比例
+Beta0_land = 2.3      # Frank-Starling 长度依赖系数
+As_land    = 10.0     # Zetas 驱动增益（= Aw_land）
+cs_land    = 40.14    # Zetas 弛豫率（s^-1）
+cw_land    = 405.86   # Zetaw 弛豫率（s^-1）
+
+# ===== 电生理参数（与参考项目 Monodomain.ufl 一致）=====
+Cm  = 1.0       # muF/cm^2
+S_v = 0.1       # 1/cm
+D_scale = 100   # 扩散系数缩放
+G_f = D_scale * 1.17e-3   # mS/cm
+G_s = D_scale * 3.90e-4
+G_n = D_scale * 3.90e-4
+
+# ===== 函数空间 =====
+V = VectorElement("Lagrange", tetrahedron, 1)   # 向量空间（力学位移、纤维方向）
+S = FiniteElement("Lagrange", tetrahedron, 1)   # 标量空间（EP 电位、Land 系数）
+R = FiniteElement("Real",     tetrahedron, 0)   # 实数空间（标量参数）
+
+# ===== 力学系统 - 测试/试探函数 =====
+v_mech = TestFunction(V)
+u_mech = TrialFunction(V)
+
+# ===== 力学系数 =====
+f0      = Coefficient(V)    # 纤维方向
+s0      = Coefficient(V)    # 片层方向
+n0      = cross(f0, s0)     # 法向
+X       = Coefficient(V)    # 当前位置（Newton 求解变量）
+x_start = Coefficient(V)    # 参考位置
+
+F_def = variable(grad(X))   # 变形梯度，标记为可微分（使 J_mech 能自动求导）
+C     = F_def.T * F_def
+J_det = det(F_def)
+I1    = tr(C)
+I3    = det(C)
+
+I_4f  = max_value(inner(f0, C*f0), 1.0)
+I_4s  = max_value(inner(s0, C*s0), 1.0)
+I_8fs = inner(f0, C*s0)
+
+# ===== 被动弹性应变能 =====
+W  = a/2.0/b * exp(b*(I1-3))
+W += a_f/2.0/b_f * (exp(b_f*(I_4f-1.0)*(I_4f-1.0)) - 1.0)
+W += a_s/2.0/b_s * (exp(b_s*(I_4s-1.0)*(I_4s-1.0)) - 1.0)
+W += a_fs/2.0/b_fs * (exp(b_fs*I_8fs*I_8fs) - 1.0)
+
+P  = diff(W, F_def)
+P -= a * exp(b*(I1-3)) * inv(F_def).T   # 不可压缩性（罚函数项1）
+P += beta_s * ln(I3) * inv(F_def).T     # 不可压缩性（罚函数项2）
+
+# ===== Land (2017) 主动收缩力模型 =====
+# 横桥状态（由 GPB/Land ODE 提供，标量 P1 场）
+XS         = Coefficient(S)   # 强结合横桥比例
+XW         = Coefficient(S)   # 弱结合横桥比例
+Zetas_prev = Coefficient(S)   # 上一力学步的 Zetas
+Zetaw_prev = Coefficient(S)   # 上一力学步的 Zetaw
+X_previous = Coefficient(V)   # 上一已接受力学步的当前位置；积分点历史
+dt_mech    = Coefficient(R)   # 力学时间步长（s）
+
+# 当前构形纤维伸长率（与本项目 F_def = grad(X) 一致）
+f_fiber = F_def * f0
+lmbda   = sqrt(max_value(inner(f_fiber, f_fiber), 1e-16))
+lmbda_previous_point = sqrt(max_value(inner(grad(X_previous)*f0,
+                                           grad(X_previous)*f0), 1e-16))
+
+def land_tension(stretch, previous_stretch, xs, xw, zs_old, zw_old, step):
+    # Original Land formula, also evaluated on a FROZEN closure snapshot.
+    # dz/dt = A*dlambda/dt-c*z; keep synchronized with land_distortion.h.
+    lc = min_value(stretch, 1.2)
+    h = max_value(0.0, 1.0 + Beta0_land*(lc + min_value(lc, 0.87) - 1.87))
+    es, ew = exp(-cs_land*step), exp(-cw_land*step)
+    zs = zs_old*es + (As_land/(cs_land*step))*(stretch-previous_stretch)*(1.0-es)
+    zw = zw_old*ew + (As_land/(cw_land*step))*(stretch-previous_stretch)*(1.0-ew)
+    return max_value(0.0, h*(Tref_land/rs_land)*(xs*(zs+1.0)+xw*zw))
+
+Ta_calibrated = land_tension(lmbda, lmbda_previous_point, XS, XW,
+                             Zetas_prev, Zetaw_prev, dt_mech)
+
+# Hybrid load: exact quadrature-point tension from the accepted valve-closure
+# solve, frozen BEFORE advancing strain history. No P1 projection or global-mean
+# replacement is used in the constitutive stress. Anchor fields never depend on X.
+X_ta_anchor = Coefficient(V)
+X_ta_previous = Coefficient(V)
+XS_ta_anchor = Coefficient(S)
+XW_ta_anchor = Coefficient(S)
+Zetas_ta_anchor = Coefficient(S)
+Zetaw_ta_anchor = Coefficient(S)
+dt_ta_anchor = Coefficient(R)
+ta_use_land = Coefficient(R)
+ta_ramp_factor = Coefficient(R)
+anchor_f = grad(X_ta_anchor)*f0
+anchor_previous_f = grad(X_ta_previous)*f0
+Ta_anchor = land_tension(sqrt(max_value(inner(anchor_f, anchor_f), 1e-16)),
+    sqrt(max_value(inner(anchor_previous_f, anchor_previous_f), 1e-16)),
+    XS_ta_anchor, XW_ta_anchor, Zetas_ta_anchor, Zetaw_ta_anchor, dt_ta_anchor)
+Ta_applied = conditional(gt(ta_use_land, 0.5), Ta_calibrated,
+                        conditional(gt(ta_ramp_factor, 0.0), ta_ramp_factor*Ta_anchor, 0.0))
+# Retain the existing geometric/extra stretch factor; it is the SCALAR Ta above
+# that decays linearly, not necessarily the complete first Piola stress tensor.
+P += Ta_applied * (1.0 + 4.9 * (sqrt(I_4f) - 1.0)) * F_def * outer(f0, f0)
+
+# ===== 力学残差（Body force Newton 法）=====
+H = inner(P, grad(v_mech)) * dx(degree=5)
+
+# ===== 电生理系统 =====
+p = TestFunction(S)
+q = TrialFunction(S)
+
+Vm     = Coefficient(S)    # 膜电位（EP 求解变量）
+Vm_old = Coefficient(S)    # 上一步膜电位
+I_ion  = Coefficient(S)    # ODE 计算的离子电流
+I_stim = Coefficient(S)    # 刺激电流
+dt     = Coefficient(R)    # EP 时间步长
+
+D = G_f * outer(f0, f0) + G_s * outer(s0, s0) + G_n * outer(n0, n0)
+
+a_ep = (S_v * Cm / dt) * inner(q, p) * dx + inner(D * grad(q), grad(p)) * dx
+
+L_ep = (S_v * Cm/dt) * inner(Vm_old, p) * dx \
+       - S_v * inner(I_ion,  p) * dx \
+       + S_v * inner(I_stim, p) * dx
+
+# ===== 力学载荷 =====
+pressure = Coefficient(R)
+N        = FacetNormal(tetrahedron)
+
+H += inner(pressure * cofac(F_def) * N, v_mech) * ds(subdomain_id=2, degree=5)
+
+R_vec = (x_start[0] - 7.30042735, x_start[1] - 7.6448494, 0)
+r     = (X[0] - 7.30042735,       X[1] - 7.6448494,       0)
+# Orthogonal projection of the current basal point onto its reference radial
+# line. The denominator must be |R_vec|^2: mixing R_vec[1] with r[1]
+# penalizes even purely radial expansion/contraction at the base.
+direction_length = (R_vec[0]*r[0] + R_vec[1]*r[1]) / (R_vec[0]*R_vec[0] + R_vec[1]*R_vec[1])
+x_constraint = direction_length*R_vec[0] - r[0]
+y_constraint = direction_length*R_vec[1] - r[1]
+z_constraint = (x_start[2] - X[2])
+H -= 1e6 * inner(as_vector((x_constraint, y_constraint, z_constraint)), v_mech) * ds(subdomain_id=3, degree=5)
+
+# ===== lmbda 的 L2 投影形式（供 main.cpp 力学步后更新 Zetas/Zetaw）=====
+# 把当前构形纤维伸长率 lmbda 投影到标量空间（与 RealLeftVentricleSolver.h 的
+# proj_problem 一致），用于下一步计算 (lmbda - lmbda_prev)。
+p_proj = TestFunction(S)
+q_proj = TrialFunction(S)
+
+lmbda_proj_expr = sqrt(max_value(inner(F_def * f0, F_def * f0), 1e-16))
+
+a_proj_lmbda = q_proj * p_proj * dx
+L_proj_lmbda = lmbda_proj_expr * p_proj * dx
+# Output only: assemble before history publication to match the solved stress.
+# Projection is NEVER fed back into the mechanical active load.
+L_proj_Ta = Ta_applied * p_proj * dx(degree=5)
+
+# ===== [Windkessel] 左心室腔体体积（0D-3D 耦合用）=====
+#
+#   腔体血容积 = (1/3) ∫_{Γ_endo} x · (n da)
+#   （散度定理：V = (1/3)∮ x·n da，x = 当前位置）
+#
+#   本项目为 total Lagrangian：ds 积分域是参考构形，面积元为 dA，
+#   当前面法向与参考法向通过 Nanson 公式联系：
+#       (cofac(F)·N) dA = (J F^{-T} N) dA = n da
+#   因此当前构形面积分可写回参考构形：
+#       V_cav = (1/3) ∫_{Γ_endo} x · (cofac(F_def)·N) dA
+#
+#   其中 x = X（当前坐标），cofac(F) = det(F)·inv(F).T = J F^{-T}
+#   符号由 ds(2) 参考外法向 N 的朝向决定（标定时检查正负）。
+#
+#   单位：长度单位³（若网格为 cm，则 1 cm³ = 1 mL）
+V_cav_form = (1.0/3.0) * inner(X, cofac(F_def) * N) * ds(subdomain_id=2, degree=5)
+
+# ===== [诊断] J_det = det(F_def) 的 L2 投影形式（仅用于 J_min/J_max 诊断）=====
+#
+#   与力学 UFL 中 J_det = det(F_def)（F_def = grad(X)）**完全一致**。
+#   用途：在当前收敛位移场 X 上投影标量场 J(X)=det(grad X)，再取 min/max
+#         判断几何有效性（J_min > 0）。
+#   ★ 仅诊断，不参与正式物理；绝不从 displacement vector 手工推导 J_min。
+p_J = TestFunction(S)
+q_J = TrialFunction(S)
+a_J_det = q_J * p_J * dx
+L_J_det = det(F_def) * p_J * dx
+
+# ===== 最终形式列表 =====
+#
+# 力学系统：
+#   F_mech = H         → 残差（含 Land 主动张力，Ta 对 X 有解析切线）
+#   J_mech = d(H)/dX   → 切线刚度
+#
+# 电生理系统：
+#   a_ep, L_ep         → 线性系统
+#
+# lmbda 投影：
+#   a_proj_lmbda, L_proj_lmbda
+F_mech = H
+J_mech = derivative(F_mech, X, u_mech)
+
+F_ep = a_ep - L_ep
+J_ep = derivative(F_ep, Vm, q)
+
+forms = [F_mech, J_mech, a_ep, L_ep, a_proj_lmbda, L_proj_lmbda, V_cav_form, a_J_det, L_J_det, L_proj_Ta]

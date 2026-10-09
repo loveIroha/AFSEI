@@ -3,7 +3,9 @@
 AFSEI：电–流固三场耦合（electrophysiology–fluid–solid interaction）。
 
 本仓库从 AFSI_GPU 的已提交版本初始化，保留其历史、GPU 流固求解器与验证用例。
-当前阶段完成项目和环境准备；EP–GPB–Land 与 Windkessel–FSI 接入尚未实现。
+当前阶段完成环境、PyTorch 单域 PDE、CUDA GPB/Land、积分点主动载荷与固体接口。
+完整真实左心室三场周期和 Windkessel 的 MAC 物理端口接入仍在进行中。
+详细方程、源模型修正、验证及后续步骤见 [EP–Land 第一阶段](docs/EP_LAND_PHASE1.md)。
 
 ## 来源
 
@@ -37,3 +39,13 @@ python scripts/check_afsei_environment.py
 单域 PDE 使用 PyTorch；GPB/Land ODE 可采用 CUDA 内核。
 先验证电生理、空间主动应力和一致切线，再建立瓣膜通道及 Windkessel–流体边界耦合。
 新增代码不得把尚未实现或未验证的三场耦合描述为已完成。
+
+## EP–GPB–Land 组件检查
+
+```bash
+python -m pytest -q tests/test_ep_*.py
+python scripts/check_afsei_ep.py --steps 40 --output .cache/ep-check/real-lv-2ms.json
+```
+
+此检查在真实 LV 参考网格计算电位、Ca、Land 主动载荷和切线，不推进完整三场周期。
+`EPDrivenPaperSolid` 已提供替换原自定义张力的固体接口，新增物理端口和周期驱动尚待接入。

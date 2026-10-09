@@ -1,0 +1,15 @@
+{
+  "repository": "https://github.com/loveIroha/test_ele_soild_heart",
+  "commit": "5bdde73c6be10cefadb005a0fcec5fdb6521f336",
+  "sha256": {
+    "GPB_cell_model.cpp": "e524889a405aa8a58f76967a85717a3dc345f69053418c6771c3df22b6bcd132",
+    "GPB_cell_model.h": "4c88931e3d08ff5917e0ba358bea76f950e190050afa236e2c10f91289a9b323",
+    "SDIRK3_Solver.h": "de5d0710984c61bbb5f0d2bcae502660bea5f49bf934a6edfbac830dbec6a939",
+    "GPBTissueManager_Land.h": "83741a955018d1e046aa3a30c86a8a423c3c5467b37214484bbea5efe1fd8d42",
+    "Active_land.ufl": "132771eb69155111c9d930dd35b2a418171bfd016cb699fa2a4fc3da4baa7bc7"
+  },
+  "mechanical_source_file": "Active_land.ufl",
+  "source_initial_entries": 57,
+  "initial_state_correction": "Missing unused full state 57 explicitly initialized to zero; source reads out of bounds",
+  "scope": "Numerical components; full EP/FSI cycle and physical valve ports pending"
+}

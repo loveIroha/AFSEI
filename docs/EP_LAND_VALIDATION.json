@@ -1,0 +1,78 @@
+{
+  "validated_at_utc": "2026-10-09T14:47:12.110599+00:00",
+  "branch": "feat/ep-land-core",
+  "afsi_baseline": "f4f88204c5a494265611237ba6d3ce317bc179bd",
+  "electromechanical_source": "5bdde73c6be10cefadb005a0fcec5fdb6521f336",
+  "environment": {
+    "python": "3.12.14",
+    "torch": "2.14.0+cu130",
+    "cuda": "13.0",
+    "gpu": "NVIDIA GeForce RTX 4090",
+    "physical_gpu": "1",
+    "cuda_arch": "8.9"
+  },
+  "tests": {
+    "passed": 65,
+    "failed": 0,
+    "warnings": 6,
+    "elapsed_seconds": 141.28,
+    "files": [
+      "test_ep_monodomain.py",
+      "test_ep_land.py",
+      "test_ep_windkessel.py",
+      "test_ep_cuda.py",
+      "test_ep_solid.py",
+      "test_ep_provenance.py",
+      "test_paper_lv.py"
+    ],
+    "coverage": [
+      "CPU and GPU FE reference comparisons and mass conservation",
+      "original C++ 57-state GPB RHS and SDIRK/Land subcycle comparisons",
+      "CUDA current stream and graph replay",
+      "spatial Land quadrature, active weak form, finite-difference JVP and sparse Jacobian",
+      "actual CPU/GPU BE-IB endpoint with EP active load adapter",
+      "RCR port-flow balance, impedance and ALE-oriented triangular flux",
+      "original paper real-LV fluid-solid regressions"
+    ],
+    "warnings_explanation": "PyTorch CSR beta and upstream deprecation notices; no failed checks"
+  },
+  "real_lv_component_check": {
+    "passed": true,
+    "scope": "EP/GPB/Land components on the real LV reference mesh",
+    "gpu": "NVIDIA GeForce RTX 4090",
+    "node_count": 26889,
+    "cell_count": 135430,
+    "ep_steps": 40,
+    "ep_step_ms": 0.05,
+    "ode_step_ms": 0.002,
+    "substeps_per_ep": 25,
+    "stimulated_endo_nodes": 3267,
+    "ep_directions": "AFSI DG0; source CG1 mapping pending",
+    "voltage_min_mv": -86.7829055487305,
+    "voltage_max_mv": 51.9291847587318,
+    "calcium_min_um": 0.1070122676755799,
+    "calcium_max_um": 0.10748062953253817,
+    "tension_min_cgs": 0.21216318555052285,
+    "tension_max_cgs": 0.2122015916426059,
+    "active_force_norm": 0.07956570715802685,
+    "active_tangent_action_norm": 0.08760094834779711,
+    "max_pcg_residual_to_tolerance": 0.9068522898667615,
+    "elapsed_seconds": 10.224952979013324,
+    "solid_motion_advanced": false,
+    "fluid_advanced": false,
+    "windkessel_ports_connected": false,
+    "three_field_integration_implemented": false
+  },
+  "package_validation": {
+    "wheel_built": true,
+    "ep_and_cuda_sources_present": true,
+    "sha256": "3dac61140b6bde457e071f0209c652fb008feb88b4361afaead31897960fcae5"
+  },
+  "limitations": [
+    "full three-field cycle driver pending",
+    "physical AV/MV ports and MAC RCR boundary pending",
+    "source CG1 EP direction mapping pending",
+    "complete EP/circulation checkpoint pending"
+  ],
+  "three_field_integration_implemented": false
+}
