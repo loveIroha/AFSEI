@@ -5,7 +5,7 @@ AFSEI：电–流固三场耦合（electrophysiology–fluid–solid interaction
 本仓库从 AFSI_GPU 已提交版本初始化，保留 GPU 流固求解器和验证用例。
 已实现 PyTorch 单域 PDE、CUDA GPB/Land、积分点主动载荷，并接入隐式流固时间推进。
 支持完整物理状态的失败回退、减小步长重试和断点续算。
-真实左心室的三场双向短程推进已验证；完整心动周期、预充盈和高质量血液网格仍待验证。
+真实左心室的三场双向短程推进已验证；新增被动预加载与相容初始化，完整心动周期和高质量血液网格仍待验证。
 新增固定真实左心室腔体的理想化基底端口/RCR 子问题，验证实际流量、质量与离散能量守恒。
 已进一步对齐源项目的材料、基底参数及积分规则，并用重新生成的原 UFL 组装力与切线核对。
 详细记录见 [第一阶段](docs/EP_LAND_PHASE1.md)、[第二阶段](docs/EP_FSI_PHASE2.md)
@@ -16,6 +16,7 @@ AFSEI：电–流固三场耦合（electrophysiology–fluid–solid interaction
 第六阶段用拟合血液反力替换原外箱流体，联立心肌运动与双阀关闭时的体积/压力约束。
 新三场驱动连接实际端口流量、RCR 和首次真实 AV 关闭后的 80 ms 张力卸载。
 数学模型与短算限制见 [双向三场阶段](docs/TWO_WAY_PHASE6.md)。
+第七阶段增加闭合界面 8 mmHg 被动预加载；平衡条件、初始循环状态及限制见 [预加载阶段](docs/PRELOAD_PHASE7.md)。
 
 ## 来源
 
@@ -44,6 +45,17 @@ python scripts/check_afsei_environment.py
 环境记录见 [environment/README.md](environment/README.md)。
 
 ## 检查和短程推进
+
+从 8 mmHg 被动平衡开始三场短算：
+
+```bash
+python scripts/prepare_afsei_preload.py --write-vtk --output results/my_preload_8mmhg
+python scripts/run_afsei_two_way.py --resume results/my_preload_8mmhg/checkpoint.npz --duration-ms 0.2 --write-vtk --output results/my_preloaded_two_way_02ms
+```
+
+预加载保留原参考几何，并将静态腔内压力和初始心房压力都设为 8 mmHg，固体和血液初始速度为零。
+动脉电容初始 85 mmHg；它会在物理时间推进后向外周释放流量，因此这不是整个循环的稳态。
+仅完成并核对平衡的三场检查点可续算；加载期间不推进 EP/ODE 或循环。
 
 第六阶段的双向三场入口如下。真实网格首个 `0.2 ms` 约需两分钟；先做短算。
 默认从未预充盈的参考几何开始，这不是生理心动周期。
@@ -101,8 +113,8 @@ python scripts/check_afsei_mechanics.py
 新检出仓库需要先运行 `bash scripts/prepare_afsei_mechanics_reference.sh`，
 此步骤使用现有独立 FEniCS 环境，不向 AFSEI 环境安装 DOLFIN。
 
-当前运行从参考几何的首次刺激时刻开始，**没有完成 8 mmHg 预充盈，也没有连接
-AV/MV/Windkessel 物理端口**。外箱仍为零压力开放边界。
+第二阶段的 `run_afsei.py` 从参考几何的首次刺激时刻开始，**没有执行 8 mmHg 预充盈，也没有连接
+AV/MV/Windkessel 物理端口**。该旧入口的外箱仍为零压力开放边界；使用上述第七阶段入口可从预加载状态启动新的双向驱动。
 报告将 `ep_fsi_time_integration_implemented` 与完整三场周期状态分别列出。
 
 ## 固定腔体端口与 Windkessel 检查

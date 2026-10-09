@@ -2,7 +2,8 @@
 
 Fresh runs start from the unloaded reference mesh at the first pacing time.
 They validate the coupled integrator; they are not preloaded cardiac cycles.
-Only this driver's own three-field checkpoints can be resumed.
+Three-field checkpoints from prepare_afsei_preload.py start from passive
+equilibrium. Earlier IB/one-way checkpoints cannot be resumed here.
 """
 import argparse,csv,json,time
 from pathlib import Path
@@ -83,6 +84,7 @@ def main():
             accepted_outlet_closures=sum(r['accepted_outlet_closure'] for r in history),
             two_way_interface_feedback_implemented=True,three_field_integration_implemented=True,
             original_box_fluid_used=False,preload_performed=progress['preload_performed'],
+            initialization=progress,
             whole_beat_validated=False,full_energy_balance_validated=False,
             cone_mesh_for_verification_only=True,anatomical_valves_present=False,
             solid_dynamics='lumped P1 inertia; backward Euler',solid_density_g_cm3=d.mechanics.config.density_g_cm3)
