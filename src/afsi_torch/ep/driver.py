@@ -5,6 +5,8 @@ mechanical step. It is not a monolithic three-field Newton solve. Physical
 AV/MV ports, preload and circulation events are not manufactured here.
 """
 from dataclasses import dataclass, replace
+from contextlib import contextmanager
+from time import perf_counter
 import torch
 from ..paper_lv import PaperLVSolid
 from ..config import TimeConfig
@@ -89,6 +91,22 @@ class AFSEIStepper:
         self.maximum_ticks = ticks(config.fsi.time.dt,self.protocol.dt_ep_s)
         self._steppers = {}
         self._ep_steps = self._ode_substeps = 0
+        # Runtime instrumentation is deliberately absent from physical checkpoints.
+        self.profile = False
+        self._last_attempt_timings = {}
+
+    @contextmanager
+    def _stage(self,name):
+        if not self.profile:
+            yield
+            return
+        torch.cuda.synchronize(self.mesh.X.device)
+        started = perf_counter()
+        try:
+            yield
+        finally:
+            torch.cuda.synchronize(self.mesh.X.device)
+            self._last_attempt_timings[name] = self._last_attempt_timings.get(name,0.)+perf_counter()-started
 
     def _fsi_stepper(self,step_ticks):
         if step_ticks not in self._steppers:
@@ -153,36 +171,48 @@ class AFSEIStepper:
         current = old.ionic_current
         live = old.cycle.ep_live(old.tick,self.protocol)
         ep_steps = 0; max_ratio = 0.; ep_iterations = 0
+        self._last_attempt_timings = {}
         try:
             for left in range(old.tick,end):
                 if not live: continue
                 stim = self.protocol.stimulus(left,self.stimulus_mask,tissue.voltage_v)
-                tissue,current,ep_info = self.ode.step(self.ep,tissue,old.strain.stretch,old.strain.zs,
-                    old.strain.zw,left*self.protocol.dt_ep_s,stim,advance_land=old.cycle.mode == 'land')
+                if self.profile:
+                    with self._stage('gpb_land_seconds'):
+                        ode,current = self.ode.advance_ode(tissue,old.strain.stretch,old.strain.zs,
+                            old.strain.zw,left*self.protocol.dt_ep_s,advance_land=old.cycle.mode == 'land')
+                    with self._stage('monodomain_seconds'):
+                        voltage,ep_info = self.ep.step(tissue.voltage_v,current,stim,self.protocol.dt_ep_s)
+                        tissue = TissueState(voltage,ode.gpb,ode.land)
+                else:
+                    tissue,current,ep_info = self.ode.step(self.ep,tissue,old.strain.stretch,old.strain.zs,
+                        old.strain.zw,left*self.protocol.dt_ep_s,stim,advance_land=old.cycle.mode == 'land')
                 ep_steps += 1
                 ep_iterations += ep_info.iterations
                 max_ratio = max(max_ratio,ep_info.residual_norm/ep_info.tolerance)
             load = ActiveLoadState(old.fsi.x,tissue.land[:,0],tissue.land[:,1],old.strain.zs,old.strain.zw,
                 dt,old.cycle.mode == 'land',old.cycle.anchor,old.cycle.factor(end,self.protocol))
-            self.buffer.stage(load)
-            driver = self._fsi_stepper(step_ticks)
-            fsi,info = driver.physical_step(old.fsi,end*self.protocol.dt_ep_s,diagnostics)
+            with self._stage('load_staging_seconds'):
+                self.buffer.stage(load)
+            with self._stage('implicit_fsi_seconds'):
+                driver = self._fsi_stepper(step_ticks)
+                fsi,info = driver.physical_step(old.fsi,end*self.protocol.dt_ep_s,diagnostics)
             # Record closure Ta BEFORE publishing projected strain histories.
             anchor = self.buffer.closure_snapshot(fsi.x) if closure else old.cycle.anchor
             cycle = old.cycle
             refresh = old.tick < self.protocol.pulse_ticks[0] or live or end in self.protocol.pulse_ticks
             strain = old.strain
             if refresh:
-                F = self.model.element_gradient(fsi.x)
-                cell_stretch = torch.linalg.vector_norm(torch.einsum('eij,ej->ei',F,self.mesh.fiber),dim=-1)
-                stretch = self.ep.project_cell_field(cell_stretch)
-                if (stretch <= 0).any():
-                    raise FloatingPointError('nonpositive projected Land stretch')
-                advance_z = old.tick < self.protocol.pulse_ticks[0] or old.cycle.mode == 'land'
-                delta = stretch-old.strain.stretch
-                zs = distortion_step(old.strain.zs,delta,dt,40.14) if advance_z else torch.zeros_like(stretch)
-                zw = distortion_step(old.strain.zw,delta,dt,405.86) if advance_z else torch.zeros_like(stretch)
-                strain = StrainHistory(stretch,zs,zw)
+                with self._stage('strain_feedback_seconds'):
+                    F = self.model.element_gradient(fsi.x)
+                    cell_stretch = torch.linalg.vector_norm(torch.einsum('eij,ej->ei',F,self.mesh.fiber),dim=-1)
+                    stretch = self.ep.project_cell_field(cell_stretch)
+                    if (stretch <= 0).any():
+                        raise FloatingPointError('nonpositive projected Land stretch')
+                    advance_z = old.tick < self.protocol.pulse_ticks[0] or old.cycle.mode == 'land'
+                    delta = stretch-old.strain.stretch
+                    zs = distortion_step(old.strain.zs,delta,dt,40.14) if advance_z else torch.zeros_like(stretch)
+                    zw = distortion_step(old.strain.zw,delta,dt,405.86) if advance_z else torch.zeros_like(stretch)
+                    strain = StrainHistory(stretch,zs,zw)
             if closure:
                 if cycle.resting_land is None:
                     raise ValueError('missing first pre-stimulus Land snapshot')
@@ -226,12 +256,19 @@ class AFSEIStepper:
             proposed = min(proposed,target_tick-old.tick)
         proposed = self.protocol.limit(old.tick,proposed,old.cycle)
         attempts = []
+        timings = {}
+        def collect_timing():
+            for key,value in self._last_attempt_timings.items():
+                timings[key] = timings.get(key,0.)+value
         while True:
             try:
                 new,info = self.attempt(old,proposed,diagnostics=diagnostics)
+                collect_timing()
                 info['rejected_attempts'] = attempts
+                if self.profile: info['timings'] = timings
                 return replace(new,rejected_attempts=old.rejected_attempts+len(attempts)),info
             except (RuntimeError,FloatingPointError,ValueError) as exc:
+                collect_timing()
                 attempts.append(dict(ticks=proposed,type=type(exc).__name__,message=str(exc)))
                 if proposed == 1 or len(attempts) > self.config.max_retries:
                     raise CoupledStepFailure('minimum/allowed coupled step failed; accepted state restored',attempts) from exc

@@ -19,7 +19,7 @@ from ..ep.checkpoint import save as save_checkpoint,load as load_checkpoint
 
 
 @torch.no_grad()
-def run(*,config=None,output=None,resume=None,duration_s=.002,device='cuda'):
+def run(*,config=None,output=None,resume=None,duration_s=.002,device='cuda',profile=False):
     if not str(device).startswith('cuda') or not torch.cuda.is_available():
         raise RuntimeError('AFSEI EP/FSI experiment requires an actual CUDA GPU')
     if resume and config is not None:
@@ -38,6 +38,10 @@ def run(*,config=None,output=None,resume=None,duration_s=.002,device='cuda'):
         driver = AFSEIStepper(mesh,config)
         state = driver.initialize()
         progress = dict(ep_steps=0,ode_substeps=0,elapsed_seconds=0.)
+    driver.profile = bool(profile)
+    torch.cuda.synchronize(driver.mesh.X.device)
+    setup_seconds = perf_counter()-started
+    measured_steps = []
     duration_ticks = ticks(duration_s,config.protocol.dt_ep_s)
     if duration_ticks < 1: raise ValueError('positive duration on the EP clock required')
     target = state.tick+duration_ticks
@@ -68,6 +72,13 @@ def run(*,config=None,output=None,resume=None,duration_s=.002,device='cuda'):
             maximum_displacement_cm=(state.fsi.x-driver.mesh.X).abs().max().item(),
             maximum_fluid_velocity_cm_per_s=max(u.abs().max().item() for u in state.fsi.velocity),
             ep_steps=ep_info.get('steps',0),total_ep_steps=progress['ep_steps'],
+            step_wall_seconds=info.get('step_wall_seconds',0.),
+            **{name:info.get('nonlinear',{}).get(name,0) for name in
+               ('fluid_solves','pressure_cycles','helmholtz_sweeps','residual_evaluations',
+                'tangent_assemblies','jacobian_actions','mass_solves','mass_iterations','gmres_iterations')},
+            **{name:info.get('timings',{}).get(name,0.) for name in
+               ('gpb_land_seconds','monodomain_seconds','load_staging_seconds',
+                'implicit_fsi_seconds','strain_feedback_seconds')},
             nonlinear_iterations=info.get('nonlinear',{}).get('iterations',0),
             nonlinear_residual=info.get('nonlinear',{}).get('residual_norm',0.),
             nonlinear_tolerance=info.get('nonlinear',{}).get('tolerance',0.),
@@ -87,6 +98,18 @@ def run(*,config=None,output=None,resume=None,duration_s=.002,device='cuda'):
             ode_substeps=progress['ode_substeps'],rejected_attempts=state.rejected_attempts,
             elapsed_seconds=progress['elapsed_seconds'],gpu=torch.cuda.get_device_name(driver.mesh.X.device),
             node_count=len(driver.mesh.X),cell_count=len(driver.mesh.cells),fluid_shape=driver.config.fsi.fluid.shape,
+            fluid_discretization='cartesian-staggered-MAC',fsi_solver='upstream-BEIBStepper',
+            fsi_coupling='implicit-BE-BE; old-position IB templates',
+            ep_fsi_coupling='partitioned EP/ODE then implicit FSI',
+            performance=dict(scope='this invocation; setup and output excluded from step times',
+                profile_enabled=bool(profile),setup_seconds=setup_seconds,
+                measured_steps=len(measured_steps),
+                first_step_seconds=measured_steps[0]['step_wall_seconds'] if measured_steps else None,
+                mean_step_seconds=sum(r['step_wall_seconds'] for r in measured_steps)/len(measured_steps) if measured_steps else None,
+                mean_after_first_step_seconds=sum(r['step_wall_seconds'] for r in measured_steps[1:])/len(measured_steps[1:]) if len(measured_steps)>1 else None,
+                stage_seconds={name:sum(r.get(name,0.) for r in measured_steps) for name in
+                    ('gpb_land_seconds','monodomain_seconds','load_staging_seconds','implicit_fsi_seconds','strain_feedback_seconds')} if profile else {},
+                timing_notes='stage times include rejected trials and lazy compilation; synchronized profiling adds overhead; nonlinear counters describe the accepted attempt'),
             direction_mapping=config.direction_mapping,stimulated_nodes=int(driver.stimulus_mask.sum()),
             mechanics_profile=config.mechanics_profile,
             source_mechanics_parameters_aligned=config.mechanics_profile == 'source',
@@ -109,12 +132,18 @@ def run(*,config=None,output=None,resume=None,duration_s=.002,device='cuda'):
     if not history: history.append(row())
     try:
         while state.tick < target:
+            if profile: torch.cuda.synchronize(driver.mesh.X.device)
+            step_started = perf_counter()
             candidate,candidate_info = driver.step(state,target_tick=target,diagnostics=True)
+            if profile: torch.cuda.synchronize(driver.mesh.X.device)
+            candidate_info['step_wall_seconds'] = perf_counter()-step_started
             # Atomic publication after the complete FSI + strain feedback pass.
             state,info = candidate,candidate_info
             progress['ep_steps'] += info['ep']['steps']
             progress['ode_substeps'] += info['ep']['ode_substeps']
-            history.append(row())
+            latest_row = row()
+            history.append(latest_row)
+            measured_steps.append(latest_row)
             if state.fsi.step % config.fsi.output.log_every == 0:
                 latest = history[-1]
                 print(f'AFSEI step={state.fsi.step}, time={state.fsi.time*1000:.3f} ms, '

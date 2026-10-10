@@ -2,6 +2,21 @@
 
 AFSEI：电–流固三场耦合（electrophysiology–fluid–solid interaction）。
 
+当前主线采用原 AFSI_GPU 的规则 MAC 网格与 BE–BE 隐式流固求解器，入口为 `scripts/run_afsei.py`。
+EP 单域 PDE 使用 PyTorch GPU，GPB/Land 使用 CUDA；主动张力取代原自定义波形。
+默认配置恢复为原真实 LV 的 128³、13 cm 外箱及已有求解器优化，保留源电–力材料、基底和方向映射。
+本阶段仍从未预加载的参考几何开始；MAC 的物理瓣口、流量驱动 RCR 及相容预加载待接入。
+贴体四面体路线保留为已有实验记录；其检查点与 MAC 不兼容。
+运行方法与实测性能见 [MAC 主线](docs/MAC_MAINLINE_PHASE9.md)。
+
+```bash
+cd /mnt/large2/gjh/AFSEI
+source scripts/activate_afsei.sh
+python scripts/run_afsei.py --duration-ms 1 --profile --output results/my_mac_ep_1ms
+# 32³ 仅用于快速接入检查
+python scripts/run_afsei.py --fluid-shape 32 --duration-ms 0.2 --output results/my_mac_ep_coarse
+```
+
 本仓库从 AFSI_GPU 已提交版本初始化，保留 GPU 流固求解器和验证用例。
 已实现 PyTorch 单域 PDE、CUDA GPB/Land、积分点主动载荷，并接入隐式流固时间推进。
 支持完整物理状态的失败回退、减小步长重试和断点续算。
@@ -46,9 +61,10 @@ python scripts/check_afsei_environment.py
 默认编译 RTX 4090 的 `8.9` 架构，可用 `AFSEI_CUDA_ARCH_LIST`、`AFSEI_BUILD_JOBS` 覆盖。
 环境记录见 [environment/README.md](environment/README.md)。
 
-## 检查和短程推进
+## 已保留的四面体实验与早期检查
 
-从 8 mmHg 被动平衡开始三场短算：
+以下四面体入口用于复现既有阶段结果；当前主线使用上面的 MAC 入口。
+四面体实验可从 8 mmHg 被动平衡开始三场短算：
 
 ```bash
 python scripts/prepare_afsei_preload.py --write-vtk --output results/my_preload_8mmhg
@@ -94,7 +110,7 @@ python -m pytest -q tests/test_source_mechanics.py tests/test_afsei_driver.py te
 ```
 
 新建运行需要未使用的输出目录；重启的 `--duration-ms` 是追加时间。
-默认流体网格为 `32³`，用于接入检查；EP 步长 `0.05 ms`，ODE 子步 `0.002 ms`，
+当前 MAC 主入口默认流体网格为 `128³`，可用 `--fluid-shape 32` 做粗网格接入检查；EP 步长 `0.05 ms`，ODE 子步 `0.002 ms`，
 流固步长 `0.1 ms`。失败可退至一个 EP 步长；所有物理状态只在完整步骤成功后发布。
 结果包括 `history.csv`、`checkpoint.npz`、`report.json`。
 
