@@ -28,14 +28,14 @@ F_{\rm passive}(x)+F_{\rm basal}(x)+p\nabla_x V(Hx)=0.
 
 这是**机械平衡初始化**，不是整个循环的稳态。默认外周静脉压力为 `8 mmHg`、远端阻力为 `1.05 mmHg·s/ml`，初始外周流出为 `(85-8)/1.05 = 73.333333 ml/s`。因此即使 AV 关闭，时间推进后电容压力也会下降。
 
-它没有重放纯固体程序加载期间的每个 EP/ODE 静息子步，也没有复制有限加载速度产生的 Land 历史。若要比较首拍的精确波形，需要进一步核对纯固体预刺激状态或经过重复心拍达到周期稳定。
+第八阶段进一步检查固定版本的源程序，确认原程序在预加载期间也冻结电位、GPB 和 Land 门控状态；此前关于缺少 EP/ODE 静息重放的推测已纠正。第七阶段实际缺少的是每个已接受机械加载步产生的伸长与 `Zs/Zw` 历史。第八阶段将默认入口改为保留 100 个 5 ms 端点的应变历史；本页数值仍记录第七阶段的零历史对照，旧检查点不会被自动改写。首拍完整波形仍需验证。
 
 ## 运行
 
 ```bash
 cd /mnt/large2/gjh/AFSEI
 source scripts/activate_afsei.sh
-python scripts/prepare_afsei_preload.py --write-vtk --output results/my_preload_8mmhg
+python scripts/prepare_afsei_preload.py --history-mode static-zero-z --write-vtk --output results/my_preload_8mmhg
 python scripts/run_afsei_two_way.py --resume results/my_preload_8mmhg/checkpoint.npz --duration-ms 0.2 --write-vtk --output results/my_preloaded_two_way_02ms
 ```
 
@@ -51,6 +51,6 @@ python scripts/run_afsei_two_way.py --resume results/my_preload_8mmhg/checkpoint
 
 完成的检查点先推进 0.2 ms，再从该检查点继续到刺激后 1 ms，共 10 个机械步、20 个 EP 步和 500 个 ODE 子步，无拒绝。首次 0.2 ms 主动载荷仍低于机械容差；后续区间出现非零固体/血液运动，最终腔压 8.000230 mmHg，心肌最大速度 0.002882 cm/s。双阀持续关闭，最大质量误差 2.7032e-10 ml/s，最大界面虚功误差 7.7716e-16 erg/s；每个机械步的真实动量残差均通过容差。动脉电容压力下降至 84.943612 mmHg。
 
-这些数值说明初始化和短程三场推进相容；尚未与源纯固体的 8 mmHg 预加载体积作数值对照，不能把较大的体积变化直接解释为已核对的生理舒张状态。
+这些数值说明初始化和短程三场推进相容。第七阶段尚未与源纯固体的 8 mmHg 预加载体积作数值对照；后续独立对照见 [第八阶段](PRELOAD_SOURCE_PHASE8.md)。较大的体积变化仍不能直接解释为已核对的生理舒张状态。
 
 详细数值记录见 [PRELOAD_VALIDATION.json](PRELOAD_VALIDATION.json)。当前血液网格仍是锥形验证网格。本阶段不宣称完成高质量血液网格、完整心动周期、射血/真实闭瓣事件验证、全系统能量平衡或与纯固体整拍波形一致性。

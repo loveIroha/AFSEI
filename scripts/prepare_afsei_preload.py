@@ -1,7 +1,8 @@
 """Solve a passive 8 mmHg preload and save a compatible three-field start.
 
 The input solid geometry remains the constitutive reference. Continuation
-does not advance EP/ODE, the integer pacing clock, or the arterial reservoir.
+does not advance voltage, GPB/Land gates, the pacing clock or circulation.
+Optional source loading history updates mechanical stretch and distortion.
 The matched initial atrial pressure is the requested cavity pressure.
 """
 import argparse,json,time
@@ -15,7 +16,7 @@ from afsi_torch.ep.config import AFSEIConfig
 from afsi_torch.moving_cavity import ALEConfig,from_solid
 from afsi_torch.two_way import ThreeFieldStepper
 from afsi_torch.two_way import checkpoint
-from afsi_torch.two_way.preload import PassivePreloader,PreloadConfig,initialize_preloaded
+from afsi_torch.two_way.preload import PassivePreloader,PreloadConfig,initialize_preloaded,SourceLoadingHistory
 from afsi_torch.moving_cavity.checkpoint import atomic
 
 
@@ -25,6 +26,8 @@ def main():
     p.add_argument('--target-pressure-mmhg',type=float,default=8.)
     p.add_argument('--initial-pc-mmhg',type=float,default=85.)
     p.add_argument('--pressure-step-mmhg',type=float,default=.5)
+    p.add_argument('--history-mode',choices=('source-ramp','static-zero-z'),default='source-ramp',
+        help='source-ramp: retain source 100 x 5ms loading Z history; static-zero-z: phase-7 comparison')
     p.add_argument('--dt-ms',type=float,default=.1); p.add_argument('--cap-edge-cm',type=float,default=.30)
     p.add_argument('--output',required=True); p.add_argument('--write-vtk',action='store_true')
     a=p.parse_args()
@@ -38,14 +41,17 @@ def main():
         atrium_mmhg=a.target_pressure_mmhg,initial_pc_mmhg=a.initial_pc_mmhg)
     d=ThreeFieldStepper(mesh,cfg,from_solid(mesh,cap_max_edge_cm=a.cap_edge_cm),blood)
     settings=PreloadConfig(target_mmhg=a.target_pressure_mmhg,initial_step_mmhg=a.pressure_step_mmhg,
-        maximum_step_mmhg=max(1.,a.pressure_step_mmhg))
+        maximum_step_mmhg=max(1.,a.pressure_step_mmhg),minimum_step_mmhg=.005 if a.history_mode=='source-ramp' else .03125,
+        nominal_steps=100 if a.history_mode=='source-ramp' else 0)
+    strain=SourceLoadingHistory(d,a.target_pressure_mmhg) if a.history_mode=='source-ramp' else None
     solver=PassivePreloader(d,settings); history=[]; status='completed'; failure=None; result=None; state=None; report={}
     def progress(entry):
         history.append(entry)
         (out/'loading_history.json').write_text(json.dumps(history,indent=2,allow_nan=False)+'\n')
         print(f"Preload P={entry['pressure_mmhg']:.6g}mmHg, V={entry['volume_ml']:.9g}ml, force residual={entry['residual_norm_dyn']:.3g}/{entry['tolerance_dyn']:.3g}, Newton={entry['newton_iterations']}, GMRES={entry['linear_iterations']}",flush=True)
     try:
-        result=solver.solve(progress); state,report=initialize_preloaded(d,result)
+        result=solver.solve(progress,observe_state=strain.observe if strain else None)
+        state,report=initialize_preloaded(d,result,strain_history=strain.final() if strain else None)
         checkpoint.save(out/'checkpoint.npz',d,state,report)
         if a.write_vtk:
             from run_afsei_two_way import write_vtk

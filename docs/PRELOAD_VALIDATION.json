@@ -623,7 +623,7 @@
   },
   "initialization_assumptions": [
     "Input mesh retained as unloaded constitutive reference; no inverse prestress",
-    "Static preload has zero active stress; does not replay EP/ODE rest evolution during source loading",
+    "Phase-7 static preload has zero active stress and zero Z history. Phase-8 source audit confirmed EP/GPB/Land gates are frozen during source loading; the missing source feature was mechanical loading strain/Z history, not EP/ODE rest evolution",
     "Closed pressure includes idealized basal cap reaction, rather than endocardial traction alone",
     "Initial atrial pressure 8 mmHg matches cavity; arterial Pc 85 mmHg is not circulatory steady state"
   ],

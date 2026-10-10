@@ -1,6 +1,7 @@
 """Passive static preload consistent with the CLOSED fitted blood interface.
 
-Continuation is a loading parameter, not elapsed EP/ODE/circulation time.
+Numerical continuation does not advance voltage, cell gates or circulation.
+Optional nominal loading time separately updates strain/distortion history.
 The reference mesh/material fields are retained. Pressure acts on the entire
 closed interface, including the idealized basal cap, exactly as in the FSI
 reaction. No additional endocardial pressure is applied after initialization.
@@ -11,7 +12,7 @@ import torch
 from ..moving_cavity.geometry import area_vectors,tetra_volumes,swept_geometry
 from ..ep.windkessel import MMHG_TO_DYN_CM2 as C
 from ..ep.buffered_load import ActiveLoadState
-from ..nonlinear import NewtonOptions,GMRESOptions,newton
+from ..nonlinear import NewtonOptions,GMRESOptions,newton,NonlinearFailure
 
 
 class ClosedPressure:
@@ -40,6 +41,25 @@ class ClosedPressure:
         return pressure_mmhg*C*self.transfer(da)
 
 
+class EndocardialPressure:
+    """Pinned source ds(2) follower pressure; comparison only, no cap load."""
+    def __init__(self,solid_mesh,volume_mesh):
+        self.faces=solid_mesh.surface(1); self.volume_mesh=volume_mesh
+    def volume(self,x): return tetra_volumes(self.volume_mesh.coordinates(x),self.volume_mesh.cells).sum()
+    def transfer(self,force,x):
+        width=force.shape[1:]
+        local=force[:,None].expand(-1,3,*width)/3
+        return x.new_zeros((len(x),*width)).index_add(0,self.faces.flatten(),local.reshape(-1,*width))
+    def force(self,x,pressure_mmhg):
+        # Solid-outward normal points into the blood: reverse for inflation.
+        return -pressure_mmhg*C*self.transfer(area_vectors(x,self.faces),x)
+    def action(self,x,pressure_mmhg,v):
+        n=x[self.faces]; d=v[self.faces]; e1=n[:,1]-n[:,0]; e2=n[:,2]-n[:,0]
+        if v.ndim==3: e1=e1[:,:,None]; e2=e2[:,:,None]
+        da=.5*(torch.linalg.cross(d[:,1]-d[:,0],e2,dim=1)+torch.linalg.cross(e1,d[:,2]-d[:,0],dim=1))
+        return -pressure_mmhg*C*self.transfer(da,x)
+
+
 @dataclass(frozen=True)
 class PreloadConfig:
     target_mmhg: float=8.
@@ -49,6 +69,8 @@ class PreloadConfig:
     force_rtol: float=1e-8
     force_atol_dyn: float=1e-3
     coarse_shape: tuple=(4,4,5)
+    nominal_steps: int=0  # 0: adaptive static loading; >0: land-history sample grid
+    pressure_predictor: bool=True
     nonlinear: NewtonOptions=field(default_factory=lambda:NewtonOptions(rtol=1e-8,atol=1e-3,max_iterations=40,
         linear=GMRESOptions(rtol=.01,atol=1e-10,restart=100,max_iterations=4000,check_policy='estimated',true_check_interval=100),
         linear_tolerance_fraction=.2,linear_forcing='fixed'))
@@ -59,6 +81,8 @@ class PreloadConfig:
             self.minimum_step_mmhg,self.force_rtol,self.force_atol_dyn)): raise ValueError('positive preload settings required')
         if not self.minimum_step_mmhg<=self.initial_step_mmhg<=self.maximum_step_mmhg: raise ValueError('invalid continuation increments')
         if len(self.coarse_shape)!=3 or any(type(n)!=int or n<2 for n in self.coarse_shape): raise ValueError('coarse grid needs 3 sizes >=2')
+        if type(self.nominal_steps)!=int or self.nominal_steps<0: raise ValueError('nonnegative integer nominal steps required')
+        if type(self.pressure_predictor)!=bool: raise ValueError('pressure predictor must be boolean')
 
 
 def coarse_basis(X,shape):
@@ -137,9 +161,9 @@ class PreloadResult:
 
 
 class PassivePreloader:
-    def __init__(self,driver,config=None):
+    def __init__(self,driver,config=None,*,pressure_load=None):
         self.driver=driver; self.config=config or PreloadConfig()
-        self.pressure=ClosedPressure(driver.blood_driver.mesh)
+        self.pressure=ClosedPressure(driver.blood_driver.mesh) if pressure_load is None else pressure_load
         self.basis=coarse_basis(driver.mesh.X,self.config.coarse_shape)
         from ..paper_lv import PaperHOTangent
         # Static preload explicitly has zero active stress: its exact active
@@ -147,12 +171,14 @@ class PassivePreloader:
         self.tangent=PaperHOTangent(driver.model)
 
     @torch.no_grad()
-    def solve(self,progress=None):
+    def solve(self,progress=None,*,observe_state=None):
         d=self.driver; c=self.config; X=d.mesh.X
         zero=X.new_zeros(len(X)); load=ActiveLoadState(X,zero,zero,zero,zero,d.config.fsi.time.dt,False)
         d.buffer.stage(load); x=X.clone(); pressure=0.; step=c.initial_step_mmhg; history=[]; rejected=[]
+        nominal=0; previous_x=None; previous_pressure=None
         while pressure<c.target_mmhg-1e-12:
-            candidate=min(pressure+step,c.target_mmhg); cache={}
+            next_target=c.target_mmhg if not c.nominal_steps else c.target_mmhg*(nominal+1)/c.nominal_steps
+            candidate=min(pressure+step,next_target,c.target_mmhg); cache={}
             def validate(y):
                 d.model.validate(y); swept_geometry(d.blood_driver.mesh,x,y,.001)
             def residual(y): return -d.model.force(y,d.config.start_time_s)-self.pressure.force(y,candidate)
@@ -168,22 +194,43 @@ class PassivePreloader:
             force_scale=max(self.pressure.force(x,candidate).norm().item(),1.)
             target=max(c.force_atol_dyn,c.force_rtol*force_scale)
             options=replace(c.nonlinear,rtol=0.,atol=target)
+            guess=x
+            if c.pressure_predictor and previous_x is not None:
+                predicted=x+(candidate-pressure)/(pressure-previous_pressure)*(x-previous_x)
+                try:
+                    validate(predicted)
+                    # Extrapolation may remove slow elastic modes while
+                    # temporarily increasing a stiff volumetric residual.
+                    # Bound the hint; its final true force tolerance is unchanged.
+                    if residual(predicted).norm()<50*residual(x).norm().clamp_min(1.): guess=predicted
+                except (ValueError,FloatingPointError,RuntimeError):
+                    pass  # A hint can fail without changing the accepted load state.
             try:
-                result=newton(residual,x,validate=validate,linearization_factory=linearization,preconditioner_factory=inverse,options=options)
+                predictor_failed=False
+                try:
+                    result=newton(residual,guess,validate=validate,linearization_factory=linearization,preconditioner_factory=inverse,options=options)
+                except NonlinearFailure:
+                    if guess is x: raise
+                    predictor_failed=True
+                    result=newton(residual,x,validate=validate,linearization_factory=linearization,preconditioner_factory=inverse,options=options)
                 final=residual(result.x).norm().item()
                 if final>target: raise RuntimeError('preload true equilibrium residual failed')
+                previous_x,previous_pressure=x,pressure
                 x=result.x; pressure=candidate
+                if c.nominal_steps and abs(pressure-next_target)<=1e-12: nominal+=1
                 entry=dict(pressure_mmhg=pressure,residual_norm_dyn=final,tolerance_dyn=target,volume_ml=self.pressure.volume(x).item(),
                     newton_iterations=result.iterations,linear_iterations=sum(h.get('linear',{}).get('iterations',0) for h in result.history),
-                    maximum_displacement_cm=(x-X).norm(dim=1).max().item(),history=result.history)
+                    maximum_displacement_cm=(x-X).norm(dim=1).max().item(),pressure_predictor_used=guess is not previous_x,
+                    pressure_predictor_fallback=predictor_failed,history=result.history)
                 history.append(entry)
                 step=min(c.maximum_step_mmhg,step*(1.5 if result.iterations<=6 else 1.))
             except (RuntimeError,ValueError,FloatingPointError) as exc:
                 rejected.append(dict(from_mmhg=pressure,to_mmhg=candidate,error=str(exc)))
-                step=step/2
+                step=(candidate-pressure)/2
                 if step<c.minimum_step_mmhg:
                     raise PreloadFailure('preload continuation failed; only converged loading states retained',x.clone(),history,rejected) from exc
                 continue
+            if observe_state: observe_state(entry,x)
             if progress: progress(entry)
         sf=d.model.force(x,d.config.start_time_s); fp=self.pressure.force(x,pressure)
         tolerance=max(c.force_atol_dyn,c.force_rtol*max(sf.norm().item(),fp.norm().item(),1.))
@@ -192,7 +239,51 @@ class PassivePreloader:
         return PreloadResult(x,pressure,error,tolerance,self.pressure.volume(x).item(),self.pressure.volume(X).item(),history,rejected)
 
 
-def initialize_preloaded(driver,result):
+@dataclass(frozen=True)
+class PreloadStrainHistory:
+    x: torch.Tensor
+    stretch: torch.Tensor
+    zs: torch.Tensor
+    zw: torch.Tensor
+    pressure_mmhg: float
+    duration_s: float
+    steps: int
+
+
+class SourceLoadingHistory:
+    """Source 0--500 ms passive pressure ramp: EP/GPB/Land frozen, Z evolves.
+
+Only converged nominal physical loading endpoints publish strain history.
+Intermediate numerical continuation states never advance this clock.
+"""
+    def __init__(self,driver,target_mmhg=8.,duration_s=.5,steps=100):
+        if type(steps)!=int or steps<1 or not isfinite(target_mmhg) or target_mmhg<=0 or not isfinite(duration_s) or duration_s<=0:
+            raise ValueError('positive loading history pressure/duration and integer steps required')
+        self.driver=driver; self.target=target_mmhg; self.duration=duration_s; self.steps=steps; self.accepted=0
+        self.stretch=torch.ones_like(driver.mesh.X[:,0]); self.zs=torch.zeros_like(self.stretch); self.zw=self.zs.clone(); self.x=None
+    @torch.no_grad()
+    def observe(self,entry,x):
+        from ..ep.land import distortion_step
+        p=entry['pressure_mmhg']; expected=self.target*(self.accepted+1)/self.steps
+        entry['physical_loading_endpoint']=False
+        if p>expected+1e-10: raise ValueError('loading skipped a source strain-history endpoint')
+        if abs(p-expected)>1e-10: return
+        F=self.driver.model.element_gradient(x)
+        cell=torch.linalg.vector_norm(torch.einsum('eij,ej->ei',F,self.driver.mesh.fiber),dim=-1)
+        stretch=self.driver.ep.project_cell_field(cell)
+        if not torch.isfinite(stretch).all() or (stretch<=0).any(): raise FloatingPointError('invalid loading stretch projection')
+        delta=stretch-self.stretch; dt=self.duration/self.steps
+        zs=distortion_step(self.zs,delta,dt,40.14); zw=distortion_step(self.zw,delta,dt,405.86)
+        if not torch.isfinite(zs).all() or not torch.isfinite(zw).all(): raise FloatingPointError('invalid loading distortion')
+        self.stretch,self.zs,self.zw,self.x=stretch,zs,zw,x.clone(); self.accepted+=1
+        entry.update(physical_loading_endpoint=True,physical_loading_time_s=self.duration*self.accepted/self.steps,
+            zs_max_abs=zs.abs().max().item(),zw_max_abs=zw.abs().max().item())
+    def final(self):
+        if self.accepted!=self.steps or self.x is None: raise ValueError('incomplete source loading history')
+        return PreloadStrainHistory(self.x,self.stretch,self.zs,self.zw,self.target,self.duration,self.steps)
+
+
+def initialize_preloaded(driver,result,*,strain_history=None):
     """Static fluid-solid initialization at pacing time; GPB/Land unadvanced."""
     from .driver import ThreeFieldState
     c=driver.blood_driver.config; p=result.pressure_mmhg
@@ -200,9 +291,16 @@ def initialize_preloaded(driver,result):
         raise ValueError('static preloaded blood needs atrium == cavity pressure and arterial Pc >= cavity pressure')
     state=driver.initialize_three_fields(x=result.x)
     e=state.ep; b=state.blood
+    if strain_history is not None:
+        from ..ep.driver import StrainHistory
+        h=strain_history
+        if abs(h.pressure_mmhg-p)>1e-12 or not torch.equal(h.x,result.x): raise ValueError('loading history belongs to a different preload state')
+        driver.ode._validate(e.tissue,h.stretch,h.zs,h.zw,e.fsi.time)
+        if not torch.allclose(h.stretch,e.strain.stretch,rtol=1e-11,atol=1e-11): raise ValueError('loading stretch differs from preloaded geometry')
+        e=replace(e,strain=StrainHistory(h.stretch.clone(),h.zs.clone(),h.zw.clone()))
     # The static initial force history is passive, even though the next
     # interval is the first paced Land interval.
-    load=replace(e.force_load,use_land=False,anchor=None,ramp_factor=0.)
+    load=replace(e.force_load,use_land=False,anchor=None,ramp_factor=0.,zs_old=e.strain.zs.clone(),zw_old=e.strain.zw.clone())
     driver.buffer.stage(load); sf=driver.model.force(e.fsi.x,e.fsi.time)
     e=replace(e,force_load=load,fsi=replace(e.fsi,force=sf))
     b=replace(b,pressure=torch.full_like(b.pressure,p*C),port_pressure_cgs=b.port_pressure_cgs.new_tensor([c.atrium_mmhg,c.initial_pc_mmhg])*C)
@@ -227,4 +325,8 @@ def initialize_preloaded(driver,result):
         minimum_solid_jacobian=torch.linalg.det(driver.model.element_gradient(e.fsi.x)).min().item(),
         maximum_displacement_cm=(e.fsi.x-driver.mesh.X).norm(dim=1).max().item(),
         reference_state_assumption='input geometry retained as unloaded reference; inverse prestress not performed')
+    report.update(loading_history_mode='source-pressure-ramp' if strain_history is not None else 'static-zero-z',
+        loading_history_duration_s=strain_history.duration_s if strain_history is not None else None,
+        loading_history_steps=strain_history.steps if strain_history is not None else 0,
+        initial_zs_max_abs=e.strain.zs.abs().max().item(),initial_zw_max_abs=e.strain.zw.abs().max().item())
     return initialized,report
