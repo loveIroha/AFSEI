@@ -27,6 +27,10 @@ MAC 的物理瓣口与流量驱动 RCR 待接入。
 本组件尚未接入完整隐式流固主线，单向阀与 RCR 仍待完成。
 实际额外压力成本及运行方式见 [局部基底密封验证](docs/MAC_LOCAL_SEAL_PHASE13.md)。
 
+补充参考 `LV_hg_coarse_WK.ipynb` 的等容压力求解与 Windkessel 体积关系；
+主动张力和 80 ms 卸载仍按电–力源项目。采用范围与 RC/RCR 差异见
+[Windkessel 与等容参考核对](docs/WINDKESSEL_NOTEBOOK_REFERENCE.md)。
+
 ```bash
 python scripts/prepare_afsei_mac_preload.py --output results/my_mac_preload_8mmhg
 python scripts/run_afsei.py --resume results/my_mac_preload_8mmhg/checkpoint.npz --duration-ms 10 --profile --output results/my_mac_preloaded_10ms
