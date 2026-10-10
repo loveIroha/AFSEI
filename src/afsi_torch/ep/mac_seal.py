@@ -12,6 +12,7 @@ from .mac_ports import _stencil
 from ..mac.grid import divergence
 from ..mac.open_boundary import gradient, face_weights
 from ..mac.dirichlet_mg import DirichletMultigrid
+from ..mac.spectral_dirichlet import SpectralDirichletPressure
 from ..fluid.solvers import pcg, SolverOptions
 
 
@@ -143,13 +144,13 @@ def prepare_local_cap(prepared, *, patch_width_cells=3., minimum_area_fraction=.
 class MACCapProjection:
     """Minimum kinetic correction subject to divergence and local cap flux.
 
-    Reuses the original Dirichlet pressure multigrid solver. Schur actions
+    Uses the same Dirichlet pressure operator via multigrid or DST-II. Schur actions
     contain pressure solves, but no viscosity/convection/solid/EP advances.
     All arrays, sparse assembly and reductions remain on the selected device.
     """
     def __init__(self, rows, pressure_solver, *, options=None):
         self.rows, self.grid, self.pressure_solver = rows, rows.prepared.cap.grid, pressure_solver
-        if (not isinstance(pressure_solver, DirichletMultigrid)
+        if (not isinstance(pressure_solver, (DirichletMultigrid,SpectralDirichletPressure))
                 or tuple(pressure_solver.shapes[0]) != self.grid.shape
                 or tuple(pressure_solver.spacings[0]) != self.grid.spacing):
             raise ValueError('pressure solver and cap MAC grids differ')

@@ -13,6 +13,19 @@ from afsi_torch.ep.windkessel import flow_driven_trial
 from afsi_torch.ep.tissue import initial_state,TissueState
 
 
+def precise_driver(base):
+    # A force/pressure tensor comparison requires more precision than the
+    # production displacement stopping target. Tighten BOTH execution paths
+    # here; production presets and acceptance thresholds remain unchanged.
+    opt=base.config.fsi.nonlinear
+    opt=replace(opt,rtol=1e-10,atol=1e-12,linear=replace(opt.linear,atol=1e-14))
+    # The 8-cell/13-cm import fixture has cells larger than this entire LV.
+    # Resolve its pressure mobility before testing full pressure/force fields.
+    fluid=replace(base.config.fsi.fluid,shape=(32,)*3,lengths=(5.,)*3,origin=(5.,)*3)
+    cfg=replace(base.config,fsi=replace(base.config.fsi,nonlinear=opt,fluid=fluid))
+    return IsovolumicAFSEIStepper(base.mesh,cfg)
+
+
 def test_augmented_gpu_jacobian_with_moving_cap(mac_case):
     d=IsovolumicAFSEIStepper.from_driver(mac_case)
     old=d.lock(d.initialize())
@@ -35,7 +48,7 @@ def test_augmented_gpu_jacobian_with_moving_cap(mac_case):
 
 
 def test_fixed_volume_pressure_rcr_checkpoint_and_rollback(mac_case,tmp_path,monkeypatch):
-    d=IsovolumicAFSEIStepper.from_driver(mac_case)
+    d=precise_driver(mac_case)
     tissue=initial_state(d.mesh.X[:,0]); land=tissue.land.clone()
     land[:,0]=1e-4; land[:,1]=1e-4
     old=d.lock(d.initialize(tissue=TissueState(tissue.voltage_v,tissue.gpb,land)))
@@ -70,3 +83,40 @@ def test_negative_pressure_restart_is_signed(mac_case,tmp_path):
     path=tmp_path/'negative.npz'; save(path,d,state)
     _,restored,_=load(path)
     assert restored.cavity_pressure_mmhg==-2.
+
+
+def test_residual_cache_invalidates_changed_unknown(mac_case):
+    d=IsovolumicAFSEIStepper.from_driver(mac_case)
+    old=d.lock(d.initialize()); endpoint=d._fsi_stepper(d.maximum_ticks)
+    stencil=endpoint.transfer.prepare(old.fsi.x)
+    problem=IsovolumicProblem(endpoint,old.fsi,stencil,endpoint.flow.advect(old.fsi.velocity),old)
+    z=old.fsi.x.new_zeros(old.fsi.x.numel()+1)
+    r=problem.residual(z); calls=endpoint.flow.calls
+    torch.testing.assert_close(problem.residual(z.clone()),r,rtol=0,atol=0)
+    assert endpoint.flow.calls==calls and problem.cache_hits==1
+    changed=z.clone(); changed[-1]=1e-5
+    problem.residual(changed)
+    assert endpoint.flow.calls==calls+1
+
+
+def test_reference_and_optimized_execution_preserve_step_and_restart(mac_case,tmp_path):
+    fast=precise_driver(mac_case)
+    ref=IsovolumicAFSEIStepper(fast.mesh,fast.config)
+    ref.set_execution(pressure_backend='multigrid',response_optimizations=False)
+    tissue=initial_state(fast.mesh.X[:,0]); land=tissue.land.clone()
+    land[:,0]=1e-4; land[:,1]=1e-4
+    tissue=TissueState(tissue.voltage_v,tissue.gpb,land)
+    a=fast.lock(fast.initialize(tissue=tissue)); b=ref.lock(ref.initialize(tissue=tissue))
+    for _ in range(2):
+        a,ai=fast.step(a); b,bi=ref.step(b)
+        assert_same(a,b)
+        assert ai['nonlinear']['tolerance']==bi['nonlinear']['tolerance']
+        assert ai['nonlinear']['residual_cache_hits']>0
+        assert ai['nonlinear']['pressure_direct_solves']>0
+        assert ai['nonlinear']['pressure_cycles']==0
+        assert a.cavity_pressure_mmhg==pytest.approx(b.cavity_pressure_mmhg,rel=1e-8,abs=1e-8)
+    for driver,state in ((fast,a),(ref,b)):
+        path=tmp_path/(driver.pressure_backend+'.npz'); save(path,driver,state)
+        restored,restart,_=load(path)
+        assert restored.execution_settings()==driver.execution_settings()
+        assert_same(state,restart,exact=True)

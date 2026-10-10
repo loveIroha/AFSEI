@@ -3,6 +3,7 @@ import pytest
 import torch
 from afsi_torch.mac.grid import MACGrid
 from afsi_torch.mac.dirichlet_mg import DirichletMultigrid
+from afsi_torch.mac.spectral_dirichlet import SpectralDirichletPressure
 from afsi_torch.mac.multigrid import MGOptions
 from afsi_torch.mac.open_boundary import gradient
 from afsi_torch.ep.mac_ports import MACBasalPorts
@@ -11,12 +12,13 @@ from afsi_torch.circulation.geometry import PortGeometry
 from afsi_torch.fluid.solvers import SolverOptions
 
 
-@pytest.fixture(params=['cpu', 'cuda'])
+@pytest.fixture(params=[('cpu','multigrid'),('cuda','multigrid'),('cpu','spectral'),('cuda','spectral')])
 def case(request):
-    if request.param == 'cuda' and not torch.cuda.is_available():
+    device,backend = request.param
+    if device == 'cuda' and not torch.cuda.is_available():
         pytest.skip('CUDA unavailable')
     X = torch.tensor([[0., 0., -2.], [-1., -1., 0.], [1., -1., 0.],
-                      [1., 1., 0.], [-1., 1., 0.]], device=request.param, dtype=torch.float64)
+                      [1., 1., 0.], [-1., 1., 0.]], device=device, dtype=torch.float64)
     endo = torch.tensor([[0, 1, 2], [0, 2, 3], [0, 3, 4], [0, 4, 1]], device=X.device)
     grid = MACGrid((16,)*3, (8.,)*3, (-4.,)*3)
     ports = PortGeometry(mv_center_cm=(.5, 0.), av_center_cm=(-.5, 0.),
@@ -25,7 +27,8 @@ def case(request):
     x = X.clone(); x[:, 2] += .08*x[:, 0]*x[:, 1]
     p = cap.prepare(x)
     rows = prepare_local_cap(p, patch_width_cells=2.)
-    mg = DirichletMultigrid(grid, device=X.device, dtype=X.dtype,
+    cls = SpectralDirichletPressure if backend=='spectral' else DirichletMultigrid
+    mg = cls(grid, device=X.device, dtype=X.dtype,
                            options=MGOptions(rtol=1e-12, atol=1e-14, max_cycles=100))
     projector = MACCapProjection(rows, mg, options=SolverOptions(
         rtol=1e-10, atol=1e-12, max_iterations=100, check_every=1, recompute_every=10))

@@ -67,6 +67,7 @@ def save(path,driver,state,progress=None):
         metadata['isovolumic'] = dict(target_volume_ml=state.target_volume_ml,
             cavity_pressure_mmhg=state.cavity_pressure_mmhg,arterial_pc_mmhg=state.arterial_pc_mmhg,
             windkessel=asdict(state.windkessel),accepted_closed_steps=state.accepted_closed_steps)
+        metadata['isovolumic_execution'] = driver.execution_settings()
     metadata['sha256'] = digest(metadata,data)
     path = Path(path); path.parent.mkdir(parents=True,exist_ok=True)
     temporary = path.with_suffix(path.suffix+'.tmp')
@@ -95,6 +96,8 @@ def load(path,device='cuda'):
         mesh = ImportedSolidMesh(*(tensor(n) for n in MESH),metadata['vertex_count'],metadata['mesh_metadata'])
         isovolumic = metadata['producer'] == 'afsei-mac-isovolumic-validation'
         driver = (IsovolumicAFSEIStepper if isovolumic else AFSEIStepper)(mesh,config)
+        if isovolumic and 'isovolumic_execution' in metadata:
+            driver.set_execution(**metadata['isovolumic_execution'])
         optional = lambda name: tensor(name) if name in data else None
         fsi = PaperState(metadata['step'],metadata['time'],tensor('x'),tuple(tensor(f'velocity_{c}') for c in range(3)),
             tensor('pressure'),tensor('force'),metadata['force_time'],pressure_time=metadata['pressure_time'],

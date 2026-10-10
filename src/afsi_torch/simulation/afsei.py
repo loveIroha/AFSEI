@@ -23,7 +23,8 @@ from ..ep.windkessel import MMHG_TO_DYN_CM2 as PRESSURE_TO_CGS
 
 
 @torch.no_grad()
-def run(*,config=None,output=None,resume=None,duration_s=.002,device='cuda',profile=False,isovolumic=False):
+def run(*,config=None,output=None,resume=None,duration_s=.002,device='cuda',profile=False,isovolumic=False,
+        pressure_backend=None,response_optimizations=None):
     if not str(device).startswith('cuda') or not torch.cuda.is_available():
         raise RuntimeError('AFSEI EP/FSI experiment requires an actual CUDA GPU')
     if resume and config is not None:
@@ -48,6 +49,9 @@ def run(*,config=None,output=None,resume=None,duration_s=.002,device='cuda',prof
         driver = IsovolumicAFSEIStepper.from_driver(driver)
         state = driver.lock(state)
     constrained = isinstance(state,IsovolumicState)
+    if pressure_backend is not None or response_optimizations is not None:
+        if not constrained: raise ValueError('isovolumic execution options require isovolumic mode')
+        driver.set_execution(pressure_backend=pressure_backend,response_optimizations=response_optimizations)
     driver.profile = bool(profile)
     torch.cuda.synchronize(driver.mesh.X.device)
     setup_seconds = perf_counter()-started
@@ -91,7 +95,8 @@ def run(*,config=None,output=None,resume=None,duration_s=.002,device='cuda',prof
             step_wall_seconds=info.get('step_wall_seconds',0.),
             **{name:info.get('nonlinear',{}).get(name,0) for name in
                ('fluid_solves','pressure_cycles','helmholtz_sweeps','residual_evaluations',
-                'tangent_assemblies','jacobian_actions','mass_solves','mass_iterations','gmres_iterations')},
+                'tangent_assemblies','jacobian_actions','mass_solves','mass_iterations','gmres_iterations',
+                'residual_cache_hits','pressure_direct_solves')},
             **{name:info.get('timings',{}).get(name,0.) for name in
                ('gpb_land_seconds','monodomain_seconds','load_staging_seconds',
                 'implicit_fsi_seconds','strain_feedback_seconds')},
@@ -121,6 +126,7 @@ def run(*,config=None,output=None,resume=None,duration_s=.002,device='cuda',prof
             isovolumic_constraint_implemented=constrained,isovolumic_validation_only=constrained,
             windkessel_closed_state_advanced=constrained and state.accepted_closed_steps>0,
             assumed_closed_outlet_for_0d_update=constrained,
+            isovolumic_execution=driver.execution_settings() if constrained else None,
             fsi_coupling='implicit-BE-BE; old-position IB templates',
             ep_fsi_coupling='partitioned EP/ODE then implicit FSI',
             performance=dict(scope='this invocation; setup and output excluded from step times',

@@ -36,6 +36,12 @@ MAC 的物理瓣口与流量驱动 RCR 待接入。
 RCR 电容压力仅按假定闭合出口 Q=0 更新，本阶段尚未接入局部密封、实际端口流量或四阶段自动切换。
 数学关系、检查点和实测结果见 [MAC 等容验证](docs/MAC_ISOVOLUMIC_PHASE14.md)。
 
+第十五阶段为等容入口增加 GPU DST-II 直接压力求解，保持原 MAC 的零压力外箱离散矩阵，
+并复用重复残差与压力单位缩放。同一真实 128³ 检查点的对照从 1.7764 降至 1.0904 s/步，
+最终收敛阈值与物理参数一致。基底投影验证从 0.6176 降至 0.07384 s/次，仍作为独立诊断。
+新等容运行默认启用加速；检查点保存后端和缩放，普通规定压力运行保留原多重网格。
+范围、误差及复现命令见 [MAC 压力加速](docs/MAC_PRESSURE_PERFORMANCE_PHASE15.md)。
+
 ```bash
 python scripts/run_afsei_isovolumic.py --resume results/my_mac_preload_8mmhg/checkpoint.npz --duration-ms 2 --profile --output results/my_mac_isovolumic_2ms
 # 普通续算入口也会保留检查点中的等容模式、固定目标、腔压和 RCR 状态

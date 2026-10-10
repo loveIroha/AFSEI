@@ -11,17 +11,25 @@ import torch
 from afsi_torch.ep import checkpoint
 from afsi_torch.ep.mac_ports import MACBasalPorts
 from afsi_torch.ep.mac_seal import prepare_local_cap, MACCapProjection
+from afsi_torch.mac.spectral_dirichlet import SpectralDirichletPressure
+from afsi_torch.mac.dirichlet_mg import DirichletMultigrid
 from check_afsei_mac_ports import timed, checkpoint_digest
 
 
-def diagnose(path, level, width, repeats):
+def diagnose(path, level, width, repeats,pressure_backend=None):
     (driver, state, _), load_s = timed(lambda: checkpoint.load(path))
     stepper = driver._fsi_stepper(driver.maximum_ticks)
     cap, cap_s = timed(lambda: MACBasalPorts(driver.mesh.X, driver.model.endo_faces,
                                            stepper.grid, subdivision_level=level))
     prepared, prepared_s = timed(lambda: cap.prepare(state.fsi.x))
     rows, rows_s = timed(lambda: prepare_local_cap(prepared, patch_width_cells=width))
-    projection = MACCapProjection(rows, stepper.flow.pressure_solver)
+    pressure_solver = stepper.flow.pressure_solver
+    if pressure_backend is not None:
+        cls = SpectralDirichletPressure if pressure_backend == 'spectral' else DirichletMultigrid
+        kwargs = {} if pressure_backend == 'spectral' else dict(backend='graph')
+        pressure_solver = cls(stepper.grid,device=driver.mesh.X.device,
+                              options=driver.config.fsi.pressure_solver,**kwargs)
+    projection = MACCapProjection(rows, pressure_solver)
     dt = state.force_load.dt_s
     w = (state.fsi.x-state.force_load.previous_x)/dt
     u = state.fsi.velocity
@@ -41,6 +49,7 @@ def diagnose(path, level, width, repeats):
         raise AssertionError('local seal projection broke MAC incompressibility')
     return dict(checkpoint=str(path), time_s=state.fsi.time, step=state.fsi.step,
         grid_shape=stepper.grid.shape, fluid_discretization='original Cartesian staggered MAC',
+        pressure_backend=pressure_solver.backend,
         patch_width_cells=width, patch_count=rows.count,
         patch_area_min_cm2=rows.area.min().item(), patch_area_max_cm2=rows.area.max().item(),
         non_port_area_cm2=rows.area.sum().item(), before=before, after=after,
@@ -66,6 +75,7 @@ def main():
     parser.add_argument('--subdivision-level', type=int, default=4)
     parser.add_argument('--patch-width-cells', type=float, default=3.)
     parser.add_argument('--repeats', type=int, default=3)
+    parser.add_argument('--pressure-solver',choices=('spectral','multigrid'))
     parser.add_argument('--output', type=Path, default=Path('results/mac_seal_validation'))
     args = parser.parse_args()
     if not torch.cuda.is_available():
@@ -78,7 +88,7 @@ def main():
     reports = []
     for path in args.checkpoint:
         source_hash = checkpoint_digest(path)
-        report = diagnose(path, args.subdivision_level, args.patch_width_cells, args.repeats)
+        report = diagnose(path, args.subdivision_level, args.patch_width_cells, args.repeats,args.pressure_solver)
         if source_hash != checkpoint_digest(path):
             raise AssertionError('source checkpoint changed')
         report.update(source_checkpoint_sha256=source_hash, source_checkpoint_unchanged=True)

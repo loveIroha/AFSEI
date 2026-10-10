@@ -42,12 +42,23 @@ class IsovolumicProblem:
         self.evaluations = self.jacobian_actions = self.tangent_assemblies = 0
         self.preconditioner_applications = 0
         self.last_z = self.last_residual = self.last_data = None
+        self.cache_hits = 0
+        self._last_state_version = None
         self.volume_scale = torch.linalg.vector_norm(torch.func.grad(self.load.volume)(state.x)).item()
-        mobility = self.response(self.load.force(state.x, 1.))
-        size = mobility.norm().item()
+        scale = driver.pressure_scale_cache if driver.owner.response_optimizations else None
+        if scale is None:
+            mobility = self.response(self.load.force(state.x, 1.))
+            size = mobility.norm().item()
+        else:
+            size = 1./scale
         if not isfinite(size) or size <= 0 or not isfinite(self.volume_scale) or self.volume_scale <= 0:
             raise ValueError('degenerate isovolumic pressure mobility or volume gradient')
         self.pressure_scale = 1./size
+        if driver.owner.response_optimizations:
+            # Units/conditioning only. Every Newton pressure column is still
+            # evaluated at the current geometry with the current IB stencil.
+            driver.pressure_scale_cache = self.pressure_scale
+            driver.owner._pressure_scales[driver.step_ticks] = self.pressure_scale
 
     def response(self, force):
         d = self.driver
@@ -68,6 +79,12 @@ class IsovolumicProblem:
         self.driver.solid.validate(x)
 
     def residual(self, z):
+        state_version = None if torch.is_inference(self.state.x) else self.state.x._version
+        if (self.driver.owner.response_optimizations and self.last_z is not None
+                and state_version is not None and state_version == self._last_state_version
+                and torch.equal(z,self.last_z)):
+            self.cache_hits += 1
+            return self.last_residual.clone()
         self.validate(z)
         y, x, p = self.unpack(z)
         d = self.driver
@@ -82,6 +99,7 @@ class IsovolumicProblem:
         if not torch.isfinite(residual).all(): raise FloatingPointError('nonfinite isovolumic residual')
         self.pressure_initial = pressure
         self.last_z, self.last_residual = z.clone(), residual.clone()
+        self._last_state_version = state_version
         self.last_data = x, p, volume, force, velocity, pressure, flow, nodal, density, spread, interpolation
         self.evaluations += 1
         return residual
@@ -127,6 +145,12 @@ class IsovolumicEndpointStepper(BEIBStepper):
     def __init__(self, owner, config):
         super().__init__(owner.model, config, owner.mesh.X.device)
         self.owner = owner
+        self.step_ticks = round(config.time.dt/owner.protocol.dt_ep_s)
+        self.pressure_scale_cache = owner._pressure_scales.get(self.step_ticks)
+        if owner.pressure_backend == 'spectral':
+            from ..mac.spectral_dirichlet import SpectralDirichletPressure
+            self.flow.pressure_solver = SpectralDirichletPressure(self.grid,
+                device=owner.mesh.X.device,options=config.pressure_solver)
 
     @torch.no_grad()
     def physical_step(self, state, new_time, diagnostics):
@@ -137,6 +161,7 @@ class IsovolumicEndpointStepper(BEIBStepper):
         departure = self.flow.advect(state.velocity)
         before = (self.flow.calls, self.flow.pressure_cycles, self.flow.helmholtz_sweeps,
                   self.mass_calls, self.mass_iterations)
+        direct_before = getattr(self.flow.pressure_solver,'direct_solves',0)
         problem = IsovolumicProblem(self, state, stencil, departure, control)
         initial = torch.zeros_like(state.x)
         if state.previous_x is not None:
@@ -165,6 +190,8 @@ class IsovolumicEndpointStepper(BEIBStepper):
         info = dict(nonlinear=dict(iterations=result.iterations,residual_norm=residual.norm().item(),
             tolerance=tolerance,history=result.history,solver='augmented-newton',
             residual_evaluations=problem.evaluations,jacobian_actions=problem.jacobian_actions,
+            residual_cache_hits=problem.cache_hits,pressure_backend=self.flow.pressure_solver.backend,
+            pressure_direct_solves=getattr(self.flow.pressure_solver,'direct_solves',0)-direct_before,
             tangent_assemblies=problem.tangent_assemblies,preconditioner_applications=problem.preconditioner_applications,
             fluid_solves=self.flow.calls-before[0],pressure_cycles=self.flow.pressure_cycles-before[1],
             helmholtz_sweeps=self.flow.helmholtz_sweeps-before[2],mass_solves=self.mass_calls-before[3],
@@ -185,6 +212,9 @@ class IsovolumicAFSEIStepper(AFSEIStepper):
     def __init__(self, mesh, config):
         super().__init__(mesh, config)
         self._iso_context = None
+        self.pressure_backend = 'spectral'
+        self.response_optimizations = True
+        self._pressure_scales = {}
 
     @classmethod
     def from_driver(cls, driver):
@@ -192,7 +222,32 @@ class IsovolumicAFSEIStepper(AFSEIStepper):
         result.__dict__.update(driver.__dict__)
         result._steppers = {}
         result._iso_context = None
+        result.pressure_backend = 'spectral'
+        result.response_optimizations = True
+        result._pressure_scales = {}
         return result
+
+    def execution_settings(self):
+        return dict(pressure_backend=self.pressure_backend,response_optimizations=self.response_optimizations,
+                    pressure_scales={str(k):v for k,v in self._pressure_scales.items()})
+
+    def set_execution(self, *, pressure_backend=None,response_optimizations=None,pressure_scales=None):
+        if pressure_backend is not None and pressure_backend not in ('spectral','multigrid'):
+            raise ValueError('invalid isovolumic pressure backend')
+        if response_optimizations is not None and type(response_optimizations) is not bool:
+            raise ValueError('response optimizations must be boolean')
+        if pressure_scales is not None:
+            if not isinstance(pressure_scales,dict): raise ValueError('pressure scales must be a map')
+            scales = {}
+            for key,value in pressure_scales.items():
+                k=int(key)
+                if str(k)!=key or not 1<=k<=self.maximum_ticks or not isfinite(value) or value<=0:
+                    raise ValueError('invalid pressure unit scaling')
+                scales[k]=value
+        if pressure_backend is not None: self.pressure_backend = pressure_backend
+        if response_optimizations is not None: self.response_optimizations = response_optimizations
+        if pressure_scales is not None: self._pressure_scales = scales
+        self._steppers = {}
 
     def _fsi_stepper(self, step_ticks):
         if step_ticks not in self._steppers:
