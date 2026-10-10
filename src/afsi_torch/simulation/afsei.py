@@ -17,10 +17,13 @@ from ..ep.config import AFSEIConfig
 from ..ep.driver import AFSEIStepper
 from ..ep.protocol import ticks
 from ..ep.checkpoint import save as save_checkpoint,load as load_checkpoint
+from ..ep.mac_isovolumic import IsovolumicState,IsovolumicAFSEIStepper
+from ..ep.mac_preload import MACEndocardialPressure
+from ..ep.windkessel import MMHG_TO_DYN_CM2 as PRESSURE_TO_CGS
 
 
 @torch.no_grad()
-def run(*,config=None,output=None,resume=None,duration_s=.002,device='cuda',profile=False):
+def run(*,config=None,output=None,resume=None,duration_s=.002,device='cuda',profile=False,isovolumic=False):
     if not str(device).startswith('cuda') or not torch.cuda.is_available():
         raise RuntimeError('AFSEI EP/FSI experiment requires an actual CUDA GPU')
     if resume and config is not None:
@@ -39,6 +42,12 @@ def run(*,config=None,output=None,resume=None,duration_s=.002,device='cuda',prof
         driver = AFSEIStepper(mesh,config)
         state = driver.initialize()
         progress = dict(ep_steps=0,ode_substeps=0,elapsed_seconds=0.)
+    if isovolumic and not isinstance(state,IsovolumicState):
+        if any((folder/name).exists() for name in ('checkpoint.npz','report.json','history.csv')):
+            raise ValueError('enabling isovolumic mode requires a fresh output folder')
+        driver = IsovolumicAFSEIStepper.from_driver(driver)
+        state = driver.lock(state)
+    constrained = isinstance(state,IsovolumicState)
     driver.profile = bool(profile)
     torch.cuda.synchronize(driver.mesh.X.device)
     setup_seconds = perf_counter()-started
@@ -62,6 +71,12 @@ def run(*,config=None,output=None,resume=None,duration_s=.002,device='cuda',prof
         driver.buffer.stage(state.force_load)
         ta = driver.buffer.tension(state.fsi.x)
         diagnostics = driver.model.diagnostics(state.fsi.x)
+        if constrained:
+            diagnostics.update(cavity_pressure_mmhg=state.cavity_pressure_mmhg,
+                additional_endocardial_pressure_cgs=state.cavity_pressure_mmhg*PRESSURE_TO_CGS,
+                isovolumic_target_ml=state.target_volume_ml,
+                isovolumic_error_ml=MACEndocardialPressure(driver.model).volume(state.fsi.x).item()-state.target_volume_ml,
+                arterial_pc_mmhg=state.arterial_pc_mmhg)
         ep_info = info.get('ep',{})
         return dict(step=state.fsi.step,ep_tick=state.tick,time_s=state.fsi.time,
             accepted_dt_s=info.get('accepted_dt_s',0.),activation_mode=state.cycle.mode,
@@ -100,7 +115,12 @@ def run(*,config=None,output=None,resume=None,duration_s=.002,device='cuda',prof
             ode_substeps=progress['ode_substeps'],rejected_attempts=state.rejected_attempts,
             elapsed_seconds=progress['elapsed_seconds'],gpu=torch.cuda.get_device_name(driver.mesh.X.device),
             node_count=len(driver.mesh.X),cell_count=len(driver.mesh.cells),fluid_shape=driver.config.fsi.fluid.shape,
-            fluid_discretization='cartesian-staggered-MAC',fsi_solver='upstream-BEIBStepper',
+            fluid_discretization='cartesian-staggered-MAC',
+            fsi_solver='original-MAC-response; augmented-Newton' if constrained else 'upstream-BEIBStepper',
+            cavity_mode='isovolumic-validation' if constrained else 'prescribed-traction',
+            isovolumic_constraint_implemented=constrained,isovolumic_validation_only=constrained,
+            windkessel_closed_state_advanced=constrained and state.accepted_closed_steps>0,
+            assumed_closed_outlet_for_0d_update=constrained,
             fsi_coupling='implicit-BE-BE; old-position IB templates',
             ep_fsi_coupling='partitioned EP/ODE then implicit FSI',
             performance=dict(scope='this invocation; setup and output excluded from step times',
@@ -125,12 +145,14 @@ def run(*,config=None,output=None,resume=None,duration_s=.002,device='cuda',prof
             windkessel_ports_connected=False,source_full_cycle_reproduced=False,
             preload_performed=bool(progress.get('preload',{}).get('preload_performed',False)),
             preload=progress.get('preload'),
-            prescribed_endocardial_pressure_mmhg=config.prescribed_endocardial_pressure_mmhg,
+            prescribed_endocardial_pressure_mmhg=None if constrained else config.prescribed_endocardial_pressure_mmhg,
+            reference_traction_mmhg=config.prescribed_endocardial_pressure_mmhg,
             physical_valve_events_detected=False,
             limitations=['MAC outer-box zero-pressure boundaries; no physical AV/MV port seal',
                          'RCR and valve-event hooks not connected to the physical fluid boundary',
                          'partitioned EP then implicit FSI; not monolithic EP-FSI Newton']
-                        + (['prescribed endocardial traction retained; physical flow-driven cavity pressure pending']
+                        + (['global volume constraint verified independently; local impermeability and physical valve events pending']
+                           if constrained else ['prescribed endocardial traction retained; physical flow-driven cavity pressure pending']
                            if progress.get('preload',{}).get('preload_performed') else
                            ['reference geometry at first stimulus; no 8 mmHg preload'])
                         + (['inherited mechanical coefficients; source profile not selected']
@@ -161,6 +183,10 @@ def run(*,config=None,output=None,resume=None,duration_s=.002,device='cuda',prof
                       f'max|dx|={latest["maximum_displacement_cm"]:.3g} cm, '
                       f'max|u|={latest["maximum_fluid_velocity_cm_per_s"]:.3g} cm/s, '
                       f'step_wall={latest["step_wall_seconds"]:.3f}s',flush=True)
+                if constrained:
+                    print(f'  Iso Pcavity={state.cavity_pressure_mmhg:.6f} mmHg, '
+                          f'Vtarget={state.target_volume_ml:.9f} ml, '
+                          f'dV={latest["isovolumic_error_ml"]:.3g} ml',flush=True)
             if state.tick < target and state.fsi.step % config.fsi.output.checkpoint_every == 0: publish('running')
         return publish('completed')
     except (Exception,KeyboardInterrupt) as exc:

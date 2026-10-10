@@ -17,6 +17,8 @@ from .driver import AFSEIStepper,CoupledState,StrainHistory
 from .tissue import TissueState
 from .protocol import CycleState
 from .buffered_load import ActiveLoadState
+from .mac_isovolumic import IsovolumicState,IsovolumicAFSEIStepper
+from .windkessel import WindkesselParameters
 
 MESH = ('X','cells','faces','facet_tags','boundary_cells','boundary_local_facets','fiber','sheet')
 INTEGER = {'cells','faces','facet_tags','boundary_cells','boundary_local_facets'}
@@ -36,6 +38,8 @@ def digest(metadata,data):
 
 def save(path,driver,state,progress=None):
     driver._check_clock(state)
+    isovolumic = isinstance(state,IsovolumicState)
+    if isovolumic: driver.validate_control(state)
     array = lambda v: v.detach().cpu().numpy()
     data = {name:array(getattr(driver.mesh,name)) for name in MESH}
     data.update({name:array(getattr(state.fsi,name)) for name in ('x','pressure','force')})
@@ -58,6 +62,11 @@ def save(path,driver,state,progress=None):
         vertex_count=driver.mesh.vertex_count,mesh_metadata=driver.mesh.metadata,
         rejected_attempts=state.rejected_attempts,progress=progress or {},
         circulation_ports_connected=False)
+    if isovolumic:
+        metadata['producer'] = 'afsei-mac-isovolumic-validation'
+        metadata['isovolumic'] = dict(target_volume_ml=state.target_volume_ml,
+            cavity_pressure_mmhg=state.cavity_pressure_mmhg,arterial_pc_mmhg=state.arterial_pc_mmhg,
+            windkessel=asdict(state.windkessel),accepted_closed_steps=state.accepted_closed_steps)
     metadata['sha256'] = digest(metadata,data)
     path = Path(path); path.parent.mkdir(parents=True,exist_ok=True)
     temporary = path.with_suffix(path.suffix+'.tmp')
@@ -72,7 +81,7 @@ def load(path,device='cuda'):
     try:
         metadata = json.loads(str(data.pop('metadata')))
         checksum = metadata.pop('sha256')
-        if (metadata.get('producer') != 'afsei-ep-fsi' or metadata.get('schema') != 1
+        if (metadata.get('producer') not in ('afsei-ep-fsi','afsei-mac-isovolumic-validation') or metadata.get('schema') != 1
                 or metadata.get('units') != 'cm-g-s; V; microA/cm2; GPB-ms-mV'
                 or metadata.get('circulation_ports_connected') is not False
                 or not REQUIRED <= set(data) or set(data)-REQUIRED-OPTIONAL
@@ -84,7 +93,8 @@ def load(path,device='cuda'):
         config = _decode(AFSEIConfig,metadata['config'])
         tensor = lambda name: torch.as_tensor(data[name],device=device)
         mesh = ImportedSolidMesh(*(tensor(n) for n in MESH),metadata['vertex_count'],metadata['mesh_metadata'])
-        driver = AFSEIStepper(mesh,config)
+        isovolumic = metadata['producer'] == 'afsei-mac-isovolumic-validation'
+        driver = (IsovolumicAFSEIStepper if isovolumic else AFSEIStepper)(mesh,config)
         optional = lambda name: tensor(name) if name in data else None
         fsi = PaperState(metadata['step'],metadata['time'],tensor('x'),tuple(tensor(f'velocity_{c}') for c in range(3)),
             tensor('pressure'),tensor('force'),metadata['force_time'],pressure_time=metadata['pressure_time'],
@@ -95,6 +105,11 @@ def load(path,device='cuda'):
         active = ActiveLoadState(*(tensor('load_'+n) for n in ('previous_x','xs','xw','zs_old','zw_old')),
             **metadata['active_load'],anchor=optional('force_anchor'))
         state = CoupledState(metadata['tick'],fsi,tissue,strain,cycle,active,tensor('ionic_current'),metadata['rejected_attempts'])
+        if isovolumic:
+            control = dict(metadata['isovolumic'])
+            control['windkessel'] = WindkesselParameters(**control['windkessel'])
+            state = IsovolumicState(state,**control)
+            driver.validate_control(state)
         driver._check_clock(state)
         driver.model.validate(fsi.x)
         driver.ode._validate(tissue,strain.stretch,strain.zs,strain.zw,fsi.time)
@@ -118,7 +133,8 @@ def load(path,device='cuda'):
                 or not torch.equal(fsi.previous_x,active.previous_x)):
             raise ValueError('checkpoint force history must use the pre-step geometry')
         driver.buffer.stage(active)
-        if not torch.allclose(fsi.force,driver.model.force(fsi.x,fsi.time),rtol=1e-9,atol=1e-7):
+        expected_force = driver.force_for_state(state) if isovolumic else driver.model.force(fsi.x,fsi.time)
+        if not torch.allclose(fsi.force,expected_force,rtol=1e-9,atol=1e-7):
             raise ValueError('checkpoint force disagrees with saved active trial history')
         return driver,state,metadata['progress']
     except (KeyError,TypeError,IndexError) as exc:

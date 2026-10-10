@@ -31,6 +31,17 @@ MAC 的物理瓣口与流量驱动 RCR 待接入。
 主动张力和 80 ms 卸载仍按电–力源项目。采用范围与 RC/RCR 差异见
 [Windkessel 与等容参考核对](docs/WINDKESSEL_NOTEBOOK_REFERENCE.md)。
 
+第十四阶段在原 MAC 流体响应中联立位移与一个腔压未知量，增加可续算的固定体积验证入口。
+固定目标按进入该模式时的封闭腔体积保存；源内膜压力载荷由求解腔压替换，保留主动力与卸载实现。
+RCR 电容压力仅按假定闭合出口 Q=0 更新，本阶段尚未接入局部密封、实际端口流量或四阶段自动切换。
+数学关系、检查点和实测结果见 [MAC 等容验证](docs/MAC_ISOVOLUMIC_PHASE14.md)。
+
+```bash
+python scripts/run_afsei_isovolumic.py --resume results/my_mac_preload_8mmhg/checkpoint.npz --duration-ms 2 --profile --output results/my_mac_isovolumic_2ms
+# 普通续算入口也会保留检查点中的等容模式、固定目标、腔压和 RCR 状态
+python scripts/run_afsei.py --resume results/my_mac_isovolumic_2ms/checkpoint.npz --duration-ms 1 --output results/my_mac_isovolumic_3ms
+```
+
 ```bash
 python scripts/prepare_afsei_mac_preload.py --output results/my_mac_preload_8mmhg
 python scripts/run_afsei.py --resume results/my_mac_preload_8mmhg/checkpoint.npz --duration-ms 10 --profile --output results/my_mac_preloaded_10ms
