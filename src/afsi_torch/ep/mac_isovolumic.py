@@ -15,6 +15,7 @@ from ..mac.open_boundary import face_weights
 from .driver import AFSEIStepper, CoupledState
 from .mac_preload import MACEndocardialPressure
 from .windkessel import WindkesselParameters, flow_driven_trial
+from .mac_transport import closed_volume_gradient
 
 VOLUME_TOLERANCE_ML = 1e-3
 
@@ -47,7 +48,7 @@ class IsovolumicProblem:
         self.last_z = self.last_residual = self.last_data = None
         self.cache_hits = 0
         self._last_state_version = None
-        self.volume_scale = torch.linalg.vector_norm(torch.func.grad(self.load.volume)(state.x)).item()
+        self.volume_scale = torch.linalg.vector_norm(closed_volume_gradient(state.x,self.load.faces,self.load.rim)).item()
         scale = driver.pressure_scale_cache if driver.owner.response_optimizations else None
         if scale is None:
             mobility = self.response(self.load.force(state.x, 1.))
@@ -117,7 +118,7 @@ class IsovolumicProblem:
         if d.assembler is None: d.assembler = d.model.tangent_factory()
         tangent = d.assembler.assemble(x, self.time)
         self.tangent_assemblies += 1
-        c = torch.func.grad(self.load.volume)(x).flatten()/self.volume_scale
+        c = closed_volume_gradient(x,self.load.faces,self.load.rim).flatten()/self.volume_scale
         b = self.response(self.load.force(x, 1.)).flatten()*self.pressure_scale
         self.c, self.b = c, b
         offset = p-d.owner.config.prescribed_endocardial_pressure_mmhg

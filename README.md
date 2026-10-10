@@ -58,6 +58,17 @@ RCR 电容压力仅按假定闭合出口 Q=0 更新，本阶段尚未接入局�
 原规则 MAC 网格、隐式流固方程、源张力/卸载和默认 3 格面片宽度保持原配置。
 实测、判据含义及 VTK 输出见 [完整表面质量预算与面片加密](docs/MAC_MASS_BUDGET_PHASE17.md)。
 
+第十八阶段增加与原 IB 质量矩阵投影速度一致的离散腔体输运，并用精确时间积分核对体积变化和压力功配对。
+四个真实检查点的输运/体积变化率差小于 6e-7 ml/s；这证明运动方程和体积测量一致，
+不表示直接表面采样滑移已消失，也不把基底材料运动的输运当成 AV/MV 流量。
+原等容方程的体积梯度改为数学等价的解析 GPU 表达式，源内膜压力载荷仍只作用于内膜。
+真实 128³、0.1 ms 步的短程实测约 1.32 s/步；主要成本仍为隐式 FSI。
+核对结果、源压力与虚拟盖面的区别及后续范围见 [IB 输运一致性](docs/MAC_TRANSPORT_PHASE18.md)。
+
+```bash
+python scripts/check_afsei_mac_transport.py --checkpoint results/my_mac_closed_cap_10steps/checkpoint.npz --benchmark-gradients 30 --output results/my_mac_transport
+```
+
 ```bash
 python scripts/check_afsei_mac_mass_budget.py --checkpoint results/my_mac_closed_cap_10steps/checkpoint.npz --levels 2 3 4 --write-vtk --output results/my_mac_mass_budget
 ```

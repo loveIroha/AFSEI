@@ -7,6 +7,7 @@ from time import perf_counter
 import torch
 from afsi_torch.ep import checkpoint
 from afsi_torch.ep.mac_mass_budget import ClosedCavityMassAudit,MassAuditTargets
+from afsi_torch.ep.mac_transport import ClosedVolumeTransport,audit_projected_transport
 
 
 @torch.no_grad()
@@ -29,6 +30,10 @@ def diagnose(path,levels,targets,output,write_vtk):
     report.update(original_ib_motion_residual_l2_cm=(state.force_load.dt_s*mismatch.norm()).item(),
         original_ib_velocity_difference_max_cm_s=mismatch.abs().max().item(),
         original_ib_projection_checked=True)
+    transport=ClosedVolumeTransport.prepare(state.force_load.previous_x,state.fsi.x,
+        driver.model.endo_faces,state.force_load.dt_s,rim=driver.model.rim)
+    report['projected_volume_transport']=audit_projected_transport(transport,endpoint.transfer,
+        stencil,state.fsi.velocity,nodal_velocity=projected)
     torch.cuda.synchronize(); elapsed=perf_counter()-started
     if write_vtk:
         import meshio
@@ -85,6 +90,8 @@ def main():
             cap_signed_ml_s=last['cap']['relative_flux_ml_s'],cap_absolute_ml_s=last['cap']['absolute_relative_flux_ml_s'],
             closed_signed_ml_s=last['closed_relative_flux_ml_s'],
             rt0_closed_fluid_flux_ml_s=last['rt0_closed_fluid_flux_ml_s'],
+            projected_volume_balance_error_ml_s=report['projected_volume_transport']['projected_volume_balance_error_ml_s'],
+            projected_transport_passed=report['projected_volume_transport']['volume_transport_audit_passed'],
             quadrature_passed=report['peskin_quadrature_converged_to_targets'],
             audit_passed=report['surface_mass_audit_passed'],seconds=report['audit_seconds']),indent=2),flush=True)
         reports.append(report)

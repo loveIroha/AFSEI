@@ -7,6 +7,7 @@ as in the original MAC scheme. There is no outer complete-FSI iteration.
 from time import perf_counter
 import torch
 from .mac_isovolumic import IsovolumicProblem
+from .mac_transport import closed_volume_gradient
 from .mac_ports import MACBasalPorts
 from .mac_seal import prepare_local_cap, MACCapProjection
 from ..nonlinear import normalized_linear_action
@@ -204,7 +205,7 @@ class CapIsovolumicProblem(IsovolumicProblem):
         if d.assembler is None: d.assembler = d.model.tangent_factory()
         tangent = d.assembler.assemble(x,self.time)
         self.tangent_assemblies += 1
-        self.c = torch.func.grad(self.load.volume)(x).flatten()/self.volume_scale
+        self.c = closed_volume_gradient(x,self.load.faces,self.load.rim).flatten()/self.volume_scale
         up,wp = self.sensitivity(self.load.force(x,1.)*self.pressure_scale)
         self.b = (-d.flow.dt*wp).flatten()
         self.hp = d.flow.dt*(rows.flow(up)-rows.material_flow(wp))/rows.area
