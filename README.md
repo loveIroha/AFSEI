@@ -50,6 +50,18 @@ RCR 电容压力仅按假定闭合出口 Q=0 更新，本阶段尚未接入局�
 面片平均通量与固定体积已验证，但积分点仍有残余滑移，实际端口/RCR 与完整周期继续标记待完成。
 数学关系、性能范围及运行命令见 [联合基底反力验证](docs/MAC_COUPLED_CAP_PHASE16.md)。
 
+第十七阶段增加完整内膜与运动基底盖面的只读质量预算，区分原 IB 的体积 L2 速度投影、
+表面采样滑移、MAC 散度和运动几何的时间积分误差；不会增加每步默认计算或改变接受阈值。
+同一 516 ms 状态，加密基底约束面片从 3 格到 2 格使盖面绝对相对通量从约 0.976 降至 0.683 ml/s，
+但内膜表面采样仍约 4.109 ml/s，尚不能据此认定局部无穿透。绝对通量不是净血液损失。
+新增少量压力方向的缓存更新，使 2 格方案同窗口排除首步后的耗时从 2.296 降至 1.335 s/步。
+原规则 MAC 网格、隐式流固方程、源张力/卸载和默认 3 格面片宽度保持原配置。
+实测、判据含义及 VTK 输出见 [完整表面质量预算与面片加密](docs/MAC_MASS_BUDGET_PHASE17.md)。
+
+```bash
+python scripts/check_afsei_mac_mass_budget.py --checkpoint results/my_mac_closed_cap_10steps/checkpoint.npz --levels 2 3 4 --write-vtk --output results/my_mac_mass_budget
+```
+
 ```bash
 python scripts/run_afsei_closed_cap.py --checkpoint results/my_mac_isovolumic_2ms/checkpoint.npz --steps 10 --output results/my_mac_closed_cap_10steps
 # 128³ 默认机械步长为 0.1 ms：10 步为 1 ms，不是 10 ms。

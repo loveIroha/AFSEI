@@ -87,3 +87,32 @@ def test_preconditioner_overlap_remaps_permuted_material_patches(mac_case):
     assert e.flow.pressure_solver.direct_solves==before
     torch.testing.assert_close(p.cap_b,original_b.flip(1),rtol=1e-12,atol=1e-12)
     torch.testing.assert_close(p.cap_h,original_h.flip((0,1)),rtol=1e-12,atol=1e-12)
+
+
+def test_preconditioner_small_patch_count_change_adds_only_missing_modes(mac_case,monkeypatch):
+    d,old,e,p=case(mac_case)
+    selected=torch.nonzero(p.rows.patches==0).flatten()
+    assert len(selected)>2
+    patches=p.rows.patches.clone(); patches[selected[::2]]=p.rows.count
+    point_area=p.rows.prepared.area_vectors[p.rows.selected].norm(dim=-1)
+    area=point_area.new_zeros(p.rows.count+1).index_add_(0,patches,point_area)
+    p.rows=replace(p.rows,patches=patches,area=area)
+    # Match pressure units for the split patch; true geometry/rows/forces
+    # are not replaced by this preconditioner-only manufactured test.
+    p.cap_scale=torch.cat((p.cap_scale,p.cap_scale[:1]))
+    probes=[]
+    def native(pressure,projector):
+        # A known nonsingular kinetic map verifies completion on the missing
+        # pressure direction, independently of the physical row assembly.
+        v=pressure/p.cap_scale; probes.append(v.clone())
+        return old.fsi.x.new_zeros(old.fsi.x.numel()),-v
+    monkeypatch.setattr(p,'kinetic_column',native)
+    before=e.flow.pressure_solver.direct_solves
+    p._prepare_preconditioner()
+    assert e.flow.pressure_solver.direct_solves==before
+    assert p.cap_h.shape==(len(area),len(area))
+    assert torch.isfinite(p.cap_h).all()
+    assert torch.linalg.matrix_rank(p.cap_h).item()==len(area)
+    assert len(probes)==1
+    torch.testing.assert_close(p.cap_h@probes[0],-probes[0],rtol=1e-11,atol=1e-11)
+    torch.testing.assert_close(e._cap_schur_cache['x'],old.fsi.x,rtol=0,atol=0)

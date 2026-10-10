@@ -68,19 +68,34 @@ class CapIsovolumicProblem(IsovolumicProblem):
         nodal, _ = d.transfer.interpolate(velocity,self.stencil)
         return velocity, nodal
 
+    def kinetic_column(self, pressure, projector):
+        d,rows=self.driver,self.rows
+        density=self.cap_density(pressure)
+        projected,_=projector.divergence_project(density)
+        velocity=tuple(d.flow.dt/d.flow.rho*u for u in projected)
+        nodal,_=d.transfer.interpolate(velocity,self.stencil)
+        return (-d.flow.dt*nodal).flatten(),d.flow.dt*(rows.flow(velocity)-rows.material_flow(nodal))/rows.area
+
+    def publish_cache(self,anchor):
+        rows=self.rows
+        # Preserve the original geometric refresh anchor while updating the
+        # pressure basis; repeated small remaps must not reset the drift bound.
+        self.driver._cap_schur_cache=dict(x=anchor.clone(),patches=rows.patches.clone(),
+            selected=rows.selected.clone(),scale=self.cap_scale.clone(),b=self.cap_b,h=self.cap_h)
+
     def _prepare_preconditioner(self):
         """Cached approximate Schur columns; only true BE residuals accept steps.
 
         Build with the kinetic pressure projection, without repeated solid,
         ODE or complete-FSI solves. Reuse while material points move <0.1 cell
-        and the patches retain a one-to-one substantial overlap. Small
+        and the patches retain substantial overlap. Small
         quadrature bin changes remap the cached columns by area overlap;
         the true current constraint rows remain unchanged. Units rescale.
         """
         d, rows = self.driver, self.rows
         cache = getattr(d,'_cap_schur_cache',None)
         reusable = (cache is not None and cache['patches'].shape == rows.patches.shape
-            and cache['h'].shape == (rows.count,rows.count)
+            and abs(len(cache['scale'])-rows.count)<=max(2,int(.02*len(cache['scale'])))
             and torch.equal(cache['selected'],rows.selected)
             and (self.state.x-cache['x']).abs().max().item() < .1*min(d.grid.spacing))
         if reusable:
@@ -89,17 +104,48 @@ class CapIsovolumicProblem(IsovolumicProblem):
                 self.cap_b = cache['b']*ratio[None,:]
                 self.cap_h = cache['h']*ratio[None,:]
                 return
-            overlap = rows.area.new_zeros((rows.count,rows.count))
+            old_count=len(cache['scale'])
+            overlap = rows.area.new_zeros((rows.count,old_count))
             point_area = rows.prepared.area_vectors[rows.selected].norm(dim=-1)
-            overlap.view(-1).index_add_(0,rows.patches*rows.count+cache['patches'],point_area)
+            overlap.view(-1).index_add_(0,rows.patches*old_count+cache['patches'],point_area)
             restriction = overlap/overlap.sum(1)[:,None]
             matched = restriction.argmax(1)
-            if ((restriction.max(1).values > .8).all()
-                    and len(torch.unique(matched)) == rows.count):
-                prolongation = overlap.T/overlap.sum(0)[:,None]
+            if (restriction.max(1).values > .8).all():
+                prolongation = overlap.T/overlap.sum(0).clamp_min(1e-30)[:,None]
                 units = prolongation*self.cap_scale[None,:]/cache['scale'][:,None]
                 self.cap_b = cache['b']@units
                 self.cap_h = restriction@cache['h']@units
+                if rows.count>old_count:
+                    started=perf_counter()
+                    chol,status=torch.linalg.cholesky_ex(units@units.T)
+                    if status.item()==0:
+                        # A split adds only a few pressure directions. Probe
+                        # those directions with the SAME kinetic projection
+                        # instead of rebuilding every existing column.
+                        projection=torch.eye(rows.count,device=rows.area.device,dtype=rows.area.dtype)-units.T@torch.cholesky_solve(units,chol)
+                        projector=MACCapProjection(rows,d.flow.pressure_solver)
+                        for _ in range(rows.count-old_count):
+                            j=projection.diagonal().argmax()
+                            v=projection[:,j].clone(); v/=v.norm()
+                            b,h=self.kinetic_column(self.cap_scale*v,projector)
+                            self.cap_b=self.cap_b+(b-self.cap_b@v)[:,None]*v[None,:]
+                            self.cap_h=self.cap_h+(h-self.cap_h@v)[:,None]*v[None,:]
+                            projection=projection-v[:,None]*v[None,:]
+                        self.publish_cache(cache['x'])
+                        if self.state.x.is_cuda: torch.cuda.synchronize(self.state.x.device)
+                        self.setup_seconds=perf_counter()-started
+                        self.setup_pressure_calls=projector.pressure_calls
+                        return
+                elif rows.count<old_count:
+                    self.publish_cache(cache['x'])
+                    return
+                if old_count!=rows.count or len(torch.unique(matched))!=rows.count:
+                    # Degenerate mappings retain a nonsingular kinetic
+                    # preconditioner approximation. This is never a term
+                    # in the physical residual, force or pressure law.
+                    returning=restriction*cache['scale'][None,:]/self.cap_scale[:,None]
+                    missing=torch.eye(rows.count,device=rows.area.device,dtype=rows.area.dtype)-returning@units
+                    self.cap_h=self.cap_h-missing
                 return
         started = perf_counter()
         projector = MACCapProjection(rows,d.flow.pressure_solver)
@@ -107,17 +153,11 @@ class CapIsovolumicProblem(IsovolumicProblem):
         unit = rows.area.new_zeros(rows.count)
         for j in range(rows.count):
             unit.zero_(); unit[j]=self.cap_scale[j]
-            density = self.cap_density(unit)
-            projected, _ = projector.divergence_project(density)
-            velocity = tuple(d.flow.dt/d.flow.rho*u for u in projected)
-            nodal, _ = d.transfer.interpolate(velocity,self.stencil)
-            columns.append((-d.flow.dt*nodal).flatten())
-            h.append(d.flow.dt*(rows.flow(velocity)-rows.material_flow(nodal))/rows.area)
+            column,lower=self.kinetic_column(unit,projector)
+            columns.append(column); h.append(lower)
         self.cap_b = torch.stack(columns,1)
         self.cap_h = torch.stack(h,1)
-        d._cap_schur_cache = dict(x=self.state.x.clone(),patches=rows.patches.clone(),
-            selected=rows.selected.clone(),scale=self.cap_scale.clone(),
-            b=self.cap_b,h=self.cap_h)
+        self.publish_cache(self.state.x)
         if self.state.x.is_cuda: torch.cuda.synchronize(self.state.x.device)
         self.setup_seconds = perf_counter()-started
         self.setup_pressure_calls = projector.pressure_calls
