@@ -42,6 +42,21 @@ RCR 电容压力仅按假定闭合出口 Q=0 更新，本阶段尚未接入局�
 新等容运行默认启用加速；检查点保存后端和缩放，普通规定压力运行保留原多重网格。
 范围、误差及复现命令见 [MAC 压力加速](docs/MAC_PRESSURE_PERFORMANCE_PHASE15.md)。
 
+第十六阶段把基底弱约束及其反力接入同一个原 MAC 隐式 Newton 步，
+联立心肌位移、源内膜等容控制压力和基底面片压差。闭合阶段直接使用完整盖面，
+不要求存在 MV/AV 几何；未增加外层完整流固强耦合循环，也未更换规则流体网格。
+检查点保存面片压力及其冻结的旧几何，续算时恢复反力；主动张力和 80 ms 卸载不变。
+真实 128³ 网格的短程检查中，复用预条件器后约 1.26 s/步，首次初始化约 11.3 s。
+面片平均通量与固定体积已验证，但积分点仍有残余滑移，实际端口/RCR 与完整周期继续标记待完成。
+数学关系、性能范围及运行命令见 [联合基底反力验证](docs/MAC_COUPLED_CAP_PHASE16.md)。
+
+```bash
+python scripts/run_afsei_closed_cap.py --checkpoint results/my_mac_isovolumic_2ms/checkpoint.npz --steps 10 --output results/my_mac_closed_cap_10steps
+# 128³ 默认机械步长为 0.1 ms：10 步为 1 ms，不是 10 ms。
+# 普通续算入口保留已保存的联合闭合盖面模式：
+python scripts/run_afsei.py --resume results/my_mac_closed_cap_10steps/checkpoint.npz --duration-ms 1 --profile --output results/my_mac_closed_cap_more_1ms
+```
+
 ```bash
 python scripts/run_afsei_isovolumic.py --resume results/my_mac_preload_8mmhg/checkpoint.npz --duration-ms 2 --profile --output results/my_mac_isovolumic_2ms
 # 普通续算入口也会保留检查点中的等容模式、固定目标、腔压和 RCR 状态

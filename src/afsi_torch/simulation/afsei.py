@@ -81,6 +81,8 @@ def run(*,config=None,output=None,resume=None,duration_s=.002,device='cuda',prof
                 isovolumic_target_ml=state.target_volume_ml,
                 isovolumic_error_ml=MACEndocardialPressure(driver.model).volume(state.fsi.x).item()-state.target_volume_ml,
                 arterial_pc_mmhg=state.arterial_pc_mmhg)
+            if driver.closed_cap:
+                diagnostics.update({f'cap_{k}':v for k,v in info.get('cap',{}).items()})
         ep_info = info.get('ep',{})
         return dict(step=state.fsi.step,ep_tick=state.tick,time_s=state.fsi.time,
             accepted_dt_s=info.get('accepted_dt_s',0.),activation_mode=state.cycle.mode,
@@ -122,11 +124,14 @@ def run(*,config=None,output=None,resume=None,duration_s=.002,device='cuda',prof
             node_count=len(driver.mesh.X),cell_count=len(driver.mesh.cells),fluid_shape=driver.config.fsi.fluid.shape,
             fluid_discretization='cartesian-staggered-MAC',
             fsi_solver='original-MAC-response; augmented-Newton' if constrained else 'upstream-BEIBStepper',
-            cavity_mode='isovolumic-validation' if constrained else 'prescribed-traction',
+            cavity_mode=('closed-cap-isovolumic-validation' if driver.closed_cap else 'isovolumic-validation')
+                if constrained else 'prescribed-traction',
             isovolumic_constraint_implemented=constrained,isovolumic_validation_only=constrained,
             windkessel_closed_state_advanced=constrained and state.accepted_closed_steps>0,
             assumed_closed_outlet_for_0d_update=constrained,
             isovolumic_execution=driver.execution_settings() if constrained else None,
+            closed_cap_reactions_in_same_implicit_fsi_solve=constrained and state.cap_pressure is not None,
+            pointwise_impermeability_established=False,
             fsi_coupling='implicit-BE-BE; old-position IB templates',
             ep_fsi_coupling='partitioned EP/ODE then implicit FSI',
             performance=dict(scope='this invocation; setup and output excluded from step times',
@@ -157,7 +162,9 @@ def run(*,config=None,output=None,resume=None,duration_s=.002,device='cuda',prof
             limitations=['MAC outer-box zero-pressure boundaries; no physical AV/MV port seal',
                          'RCR and valve-event hooks not connected to the physical fluid boundary',
                          'partitioned EP then implicit FSI; not monolithic EP-FSI Newton']
-                        + (['global volume constraint verified independently; local impermeability and physical valve events pending']
+                        + (['joint weak cap constraints verified; pointwise impermeability and valve events pending']
+                           if constrained and driver.closed_cap else
+                           ['global volume constraint verified independently; local impermeability and physical valve events pending']
                            if constrained else ['prescribed endocardial traction retained; physical flow-driven cavity pressure pending']
                            if progress.get('preload',{}).get('preload_performed') else
                            ['reference geometry at first stimulus; no 8 mmHg preload'])

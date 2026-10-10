@@ -27,12 +27,15 @@ class IsovolumicState:
     arterial_pc_mmhg: float = 85.
     windkessel: WindkesselParameters = WindkesselParameters()
     accepted_closed_steps: int = 0
+    cap_pressure: torch.Tensor | None = None
+    cap_geometry: torch.Tensor | None = None
 
     def __getattr__(self, name):
         return getattr(self.ep, name)
 
 
 class IsovolumicProblem:
+    extra_unknowns = 1
     def __init__(self, driver, state, stencil, departure, control):
         self.driver, self.state, self.stencil, self.departure = driver, state, stencil, departure
         self.control = control
@@ -162,15 +165,19 @@ class IsovolumicEndpointStepper(BEIBStepper):
         before = (self.flow.calls, self.flow.pressure_cycles, self.flow.helmholtz_sweeps,
                   self.mass_calls, self.mass_iterations)
         direct_before = getattr(self.flow.pressure_solver,'direct_solves',0)
-        problem = IsovolumicProblem(self, state, stencil, departure, control)
+        if self.owner.closed_cap:
+            from .mac_cap_coupled import CapIsovolumicProblem
+            problem = CapIsovolumicProblem(self, state, stencil, departure, control)
+        else:
+            problem = IsovolumicProblem(self, state, stencil, departure, control)
         initial = torch.zeros_like(state.x)
         if state.previous_x is not None:
             initial = (state.x-state.previous_x)*(self.flow.dt/(state.previous_dt or self.flow.dt))
-        z = torch.cat((initial.flatten(), initial.new_zeros(1)))
+        z = torch.cat((initial.flatten(), initial.new_zeros(problem.extra_unknowns)))
         r0 = problem.residual(z)
         settings = self.config.nonlinear
         # Retain the original mechanical tolerance, independent of constraint scaling.
-        tolerance = max(settings.atol, settings.rtol*r0[:-1].norm().item())
+        tolerance = max(settings.atol, settings.rtol*r0[:state.x.numel()].norm().item())
         options = replace(settings, rtol=0., atol=tolerance)
         result = newton(problem.residual, z, validate=problem.validate,
             linearization_factory=problem.linearization, preconditioner_factory=problem.preconditioner,
@@ -205,6 +212,17 @@ class IsovolumicEndpointStepper(BEIBStepper):
             sp = (nodal*force).sum()
             info.update(divergence_l2=(self.grid.volume*divergence(velocity,self.grid.spacing).square().sum()).sqrt().item(),
                 solid_power=sp.item(),fluid_power=fp.item(),power_error=abs((fp-sp).item()))
+        if self.owner.closed_cap:
+            report = problem.report()
+            # Physical checks supplement the original full displacement residual.
+            if (report['constraint_residual_norm_ml_s'] > 1e-5
+                    or report['interpolated_velocity_constraint_norm_ml_s'] > 1e-5):
+                raise NonlinearFailure('coupled cap true relative flux exceeds target',result)
+            info['cap'] = report
+            info['_cap_state'] = (problem.last_cap_pressure.clone(),state.x.clone())
+            if diagnostics:
+                # Fluid cap pressure power is distinct from IB solid power.
+                info['power_error'] = abs(fp.item()-sp.item()-report['cap_fluid_power_erg_s'])
         return accepted, info
 
 
@@ -215,6 +233,8 @@ class IsovolumicAFSEIStepper(AFSEIStepper):
         self.pressure_backend = 'spectral'
         self.response_optimizations = True
         self._pressure_scales = {}
+        self.closed_cap = False
+        self.cap_patch_width_cells = 3.
 
     @classmethod
     def from_driver(cls, driver):
@@ -225,17 +245,25 @@ class IsovolumicAFSEIStepper(AFSEIStepper):
         result.pressure_backend = 'spectral'
         result.response_optimizations = True
         result._pressure_scales = {}
+        result.closed_cap = False
+        result.cap_patch_width_cells = 3.
         return result
 
     def execution_settings(self):
         return dict(pressure_backend=self.pressure_backend,response_optimizations=self.response_optimizations,
-                    pressure_scales={str(k):v for k,v in self._pressure_scales.items()})
+                    pressure_scales={str(k):v for k,v in self._pressure_scales.items()},
+                    closed_cap=self.closed_cap,cap_patch_width_cells=self.cap_patch_width_cells)
 
-    def set_execution(self, *, pressure_backend=None,response_optimizations=None,pressure_scales=None):
+    def set_execution(self, *, pressure_backend=None,response_optimizations=None,pressure_scales=None,
+                      closed_cap=None,cap_patch_width_cells=None):
         if pressure_backend is not None and pressure_backend not in ('spectral','multigrid'):
             raise ValueError('invalid isovolumic pressure backend')
         if response_optimizations is not None and type(response_optimizations) is not bool:
             raise ValueError('response optimizations must be boolean')
+        if closed_cap is not None and type(closed_cap) is not bool:
+            raise ValueError('closed cap must be boolean')
+        if cap_patch_width_cells is not None and (not isfinite(cap_patch_width_cells) or cap_patch_width_cells < 2.):
+            raise ValueError('cap patch width >=2 required')
         if pressure_scales is not None:
             if not isinstance(pressure_scales,dict): raise ValueError('pressure scales must be a map')
             scales = {}
@@ -247,6 +275,8 @@ class IsovolumicAFSEIStepper(AFSEIStepper):
         if pressure_backend is not None: self.pressure_backend = pressure_backend
         if response_optimizations is not None: self.response_optimizations = response_optimizations
         if pressure_scales is not None: self._pressure_scales = scales
+        if closed_cap is not None: self.closed_cap = closed_cap
+        if cap_patch_width_cells is not None: self.cap_patch_width_cells = cap_patch_width_cells
         self._steppers = {}
 
     def _fsi_stepper(self, step_ticks):
@@ -271,10 +301,28 @@ class IsovolumicAFSEIStepper(AFSEIStepper):
         volume = MACEndocardialPressure(self.model).volume(state.fsi.x).item()
         if abs(volume-state.target_volume_ml) > VOLUME_TOLERANCE_ML:
             raise ValueError('saved isovolumic geometry violates fixed target')
+        if (state.cap_pressure is None) != (state.cap_geometry is None):
+            raise ValueError('cap pressure and frozen geometry must be saved together')
+        if state.cap_pressure is not None:
+            if (not self.closed_cap or state.cap_geometry.shape != state.fsi.x.shape
+                    or state.cap_pressure.ndim != 1
+                    or any(v.dtype != state.fsi.x.dtype or v.device != state.fsi.x.device
+                           for v in (state.cap_pressure,state.cap_geometry))
+                    or not torch.isfinite(state.cap_geometry).all() or not torch.isfinite(state.cap_pressure).all()):
+                raise ValueError('invalid coupled cap state')
+            if state.fsi.previous_x is None or not torch.equal(state.cap_geometry,state.fsi.previous_x):
+                raise ValueError('cap reaction must retain the accepted pre-step geometry')
 
     def force_for_state(self, state):
-        return self.model.force(state.fsi.x,state.fsi.time)+MACEndocardialPressure(self.model).force(
+        force = self.model.force(state.fsi.x,state.fsi.time)+MACEndocardialPressure(self.model).force(
             state.fsi.x,state.cavity_pressure_mmhg-self.config.prescribed_endocardial_pressure_mmhg)
+        if state.cap_pressure is not None:
+            from .mac_cap_coupled import closed_rows
+            ticks = round(state.force_load.dt_s/self.protocol.dt_ep_s)
+            rows = closed_rows(self._fsi_stepper(ticks),state.cap_geometry)
+            if rows.count != len(state.cap_pressure): raise ValueError('cap pressure partition mismatch')
+            force = force+rows.reaction(state.cap_pressure)
+        return force
 
     @torch.no_grad()
     def step(self, old, **kwargs):
@@ -285,6 +333,9 @@ class IsovolumicAFSEIStepper(AFSEIStepper):
             trial = flow_driven_trial(old.arterial_pc_mmhg,0.,info['accepted_dt_s'],old.windkessel)
             result = replace(old,ep=accepted,cavity_pressure_mmhg=info['isovolumic']['cavity_pressure_mmhg'],
                 arterial_pc_mmhg=trial.pc_mmhg,accepted_closed_steps=old.accepted_closed_steps+1)
+            if self.closed_cap:
+                pressure,geometry = info.pop('_cap_state')
+                result = replace(result,cap_pressure=pressure,cap_geometry=geometry)
             self.validate_control(result)
             info['isovolumic'].update(arterial_pc_mmhg=result.arterial_pc_mmhg,
                 assumed_closed_outlet_flow_ml_s=0.,outlet_opening_pressure_reached=

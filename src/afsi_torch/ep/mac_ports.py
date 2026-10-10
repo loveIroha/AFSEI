@@ -108,18 +108,20 @@ class MACBasalPorts:
     """
     @torch.no_grad()
     def __init__(self, reference_x, endocardial_faces, grid, *, ports=None,
-                 subdivision_level=4, area_rtol=.03):
+                 subdivision_level=4, area_rtol=.03, with_ports=True):
         if (reference_x.ndim != 2 or reference_x.shape[1] != 3 or reference_x.dtype != torch.float64
                 or not torch.isfinite(reference_x).all() or endocardial_faces.ndim != 2
                 or endocardial_faces.shape[1] != 3 or endocardial_faces.dtype != torch.int64
                 or endocardial_faces.device != reference_x.device
                 or type(subdivision_level) is not int or not 0 <= subdivision_level <= 6
-                or not isfinite(area_rtol) or not 0 < area_rtol <= .10):
+                or not isfinite(area_rtol) or not 0 < area_rtol <= .10
+                or type(with_ports) is not bool):
             raise ValueError('float64 P1 surface, subdivision level 0..6 and area tolerance in (0,.1] required')
         self.X = reference_x.detach().clone()
         self.endo = endocardial_faces.detach().clone()
         self.grid = grid
         self.ports = ports or PortGeometry()
+        self.with_ports = with_ports
         self.rim = cavity_rim(self.endo)
         rim_x = self.X[self.rim[:, 0]]
         self.center = rim_x.mean(0)
@@ -141,8 +143,8 @@ class MACBasalPorts:
         for _ in range(len(self.rim)):
             ordered.append(current); current = following[current]
         polygon = (self.X[torch.tensor(ordered, device=self.X.device)]-self.center)@self.frame.T
-        for center, radius in ((self.ports.mv_center_cm, self.ports.mv_radius_cm),
-                               (self.ports.av_center_cm, self.ports.av_radius_cm)):
+        for center, radius in (() if not with_ports else ((self.ports.mv_center_cm, self.ports.mv_radius_cm),
+                               (self.ports.av_center_cm, self.ports.av_radius_cm))):
             _check_disc(polygon[:, :2], center, radius)
         self.subtriangles = _subdivision(subdivision_level, self.X)
         q = len(self.subtriangles)
@@ -153,14 +155,15 @@ class MACBasalPorts:
             raise ValueError('reference basal fan must be star-shaped with outward orientation')
         local = (points-self.center)@self.frame.T
         self.labels = torch.zeros(len(points), device=self.X.device, dtype=torch.int64)
-        for label, center, radius in ((1, self.ports.mv_center_cm, self.ports.mv_radius_cm),
-                                     (2, self.ports.av_center_cm, self.ports.av_radius_cm)):
+        for label, center, radius in (() if not with_ports else ((1, self.ports.mv_center_cm, self.ports.mv_radius_cm),
+                                     (2, self.ports.av_center_cm, self.ports.av_radius_cm))):
             disc = (local[:, :2]-local.new_tensor(center)).square().sum(-1) <= radius**2
             self.labels[disc] = label
         region_area = self.region_sum(torch.linalg.vector_norm(areas, dim=-1))
-        nominal = self.X.new_tensor([pi*self.ports.mv_radius_cm**2, pi*self.ports.av_radius_cm**2])
-        error = (region_area[1:]-nominal)/nominal
-        if (error.abs() > area_rtol).any() or (region_area <= 0).any():
+        nominal = (self.X.new_tensor([pi*self.ports.mv_radius_cm**2, pi*self.ports.av_radius_cm**2])
+                   if with_ports else self.X.new_zeros(2))
+        error = (region_area[1:]-nominal)/nominal if with_ports else self.X.new_zeros(2)
+        if with_ports and ((error.abs() > area_rtol).any() or (region_area <= 0).any()):
             raise ValueError('basal port area is underresolved; increase surface subdivision level')
         self.metadata = dict(anatomical_valves_present=False,
             geometry='material mean-rim triangular cap on the original Cartesian MAC box',
@@ -169,6 +172,7 @@ class MACBasalPorts:
             surface_quadrature_points=len(points), reference_region_area_cm2=region_area.cpu().tolist(),
             nominal_reference_port_area_cm2=nominal.cpu().tolist(),
             relative_reference_port_area_error=error.cpu().tolist(),
+            idealized_port_discs_present=with_ports,
             label_order=['non_port_cap', 'mv', 'av'],
             ports_imposed=False, cap_sealed=False, windkessel_ports_connected=False)
 

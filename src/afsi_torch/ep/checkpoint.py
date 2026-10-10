@@ -24,7 +24,7 @@ MESH = ('X','cells','faces','facet_tags','boundary_cells','boundary_local_facets
 INTEGER = {'cells','faces','facet_tags','boundary_cells','boundary_local_facets'}
 REQUIRED = {*MESH,'x','pressure','force','velocity_0','velocity_1','velocity_2','voltage_v','gpb','land',
             'stretch','zs','zw','ionic_current','load_previous_x','load_xs','load_xw','load_zs_old','load_zw_old'}
-OPTIONAL = {'previous_x','cycle_anchor','resting_land','force_anchor'}
+OPTIONAL = {'previous_x','cycle_anchor','resting_land','force_anchor','cap_pressure','cap_geometry'}
 
 
 def digest(metadata,data):
@@ -63,6 +63,9 @@ def save(path,driver,state,progress=None):
         rejected_attempts=state.rejected_attempts,progress=progress or {},
         circulation_ports_connected=False)
     if isovolumic:
+        if state.cap_pressure is not None:
+            data['cap_pressure'] = array(state.cap_pressure)
+            data['cap_geometry'] = array(state.cap_geometry)
         metadata['producer'] = 'afsei-mac-isovolumic-validation'
         metadata['isovolumic'] = dict(target_volume_ml=state.target_volume_ml,
             cavity_pressure_mmhg=state.cavity_pressure_mmhg,arterial_pc_mmhg=state.arterial_pc_mmhg,
@@ -112,7 +115,12 @@ def load(path,device='cuda'):
             control = dict(metadata['isovolumic'])
             control['windkessel'] = WindkesselParameters(**control['windkessel'])
             state = IsovolumicState(state,**control)
+            if 'cap_pressure' in data or 'cap_geometry' in data:
+                from dataclasses import replace
+                state = replace(state,cap_pressure=optional('cap_pressure'),cap_geometry=optional('cap_geometry'))
             driver.validate_control(state)
+        elif 'cap_pressure' in data or 'cap_geometry' in data:
+            raise ValueError('cap reactions require an isovolumic coupled checkpoint')
         driver._check_clock(state)
         driver.model.validate(fsi.x)
         driver.ode._validate(tissue,strain.stretch,strain.zs,strain.zw,fsi.time)

@@ -93,18 +93,24 @@ class LocalCapRows:
 
 
 @torch.no_grad()
-def prepare_local_cap(prepared, *, patch_width_cells=3., minimum_area_fraction=.15):
+def prepare_local_cap(prepared, *, patch_width_cells=3., minimum_area_fraction=.15,
+                      regions=(0,)):
     """Material quadrature partition into MAC-scale local pressure patches.
 
     Tiny edge fragments are assigned to the nearest substantial patch. Every
-    non-port integration point is covered exactly once; MV/AV are excluded.
+    selected integration point is covered exactly once. Default excludes
+    MV/AV; regions=(0,1,2) closes the complete idealized cap during iso phases.
     Geometry is frozen during a linear solve, never flattened or re-meshed.
     """
     if (not isfinite(patch_width_cells) or patch_width_cells < 2.
             or not isfinite(minimum_area_fraction) or not 0 < minimum_area_fraction < .5):
         raise ValueError('patch width >=2 cells and minimum area fraction in (0,.5) required')
+    if not regions or len(set(regions)) != len(regions) or any(r not in (0,1,2) for r in regions):
+        raise ValueError('nonempty distinct cap regions 0/1/2 required')
     cap, grid = prepared.cap, prepared.cap.grid
-    selected = torch.nonzero(cap.labels == 0).flatten()
+    mask = torch.zeros_like(cap.labels, dtype=torch.bool)
+    for region in regions: mask |= cap.labels == region
+    selected = torch.nonzero(mask).flatten()
     points, areas = prepared.points[selected], prepared.area_vectors[selected]
     width = patch_width_cells*max(grid.spacing)
     uv = (points-points.mean(0))@cap.frame[:2].T
