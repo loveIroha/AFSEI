@@ -71,6 +71,12 @@ class EPDrivenPaperSolid(PaperLVSolid):
 
 
 class EPDrivenTangent(PaperHOTangent):
+    def __init__(self, model, chunk_size=2048):
+        super().__init__(model, chunk_size)
+        from .active_tangent import active_local_jacobian
+        from ..mac.execution import tensor_kernel
+        self._active_kernel = tensor_kernel(active_local_jacobian, model.mesh.X.device)
+
     @torch.no_grad()
     def assemble(self, x, time):
         # Existing sparse structure and passive/basal tangent are retained.
@@ -78,9 +84,16 @@ class EPDrivenTangent(PaperHOTangent):
         values = base.values().clone()
         load = self.model.active_load
         args = load._args(x)
-        kernel = torch.vmap(torch.func.jacrev(load._element_force,argnums=0))
+        # Both production buffered trials and immutable reference loads work.
+        if hasattr(load, 'dt'):
+            dt, use_land, ramp = load.dt, load.use_land, load.ramp
+        else:
+            dt = x.new_tensor(load.dt_s)
+            use_land = x.new_tensor(float(load.mode == 'land'))
+            ramp = x.new_tensor(load.ramp_factor)
         for start in range(0,len(load.geometry.cells),self.chunk_size):
-            local = kernel(*(v[start:start+self.chunk_size] for v in args))
+            local = self._active_kernel(*(v[start:start+self.chunk_size] for v in args),
+                                        dt,use_land,ramp)
             begin = start*12*12
             values.index_add_(0,self.inverse[begin:begin+local.numel()],local.reshape(-1))
         if not torch.isfinite(values).all():

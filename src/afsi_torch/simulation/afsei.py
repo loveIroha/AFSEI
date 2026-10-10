@@ -87,7 +87,8 @@ def run(*,config=None,output=None,resume=None,duration_s=.002,device='cuda',prof
             rejected_attempts=state.rejected_attempts,**diagnostics)
 
     def publish(status):
-        progress['elapsed_seconds'] = elapsed_previous+perf_counter()-started
+        invocation_elapsed = perf_counter()-started
+        progress['elapsed_seconds'] = elapsed_previous+invocation_elapsed
         if not history or int(history[-1]['ep_tick']) != state.tick: history.append(row())
         with (folder/'history.csv').open('w',newline='') as stream:
             fields = list(dict.fromkeys(name for r in history for name in r))
@@ -104,6 +105,9 @@ def run(*,config=None,output=None,resume=None,duration_s=.002,device='cuda',prof
             ep_fsi_coupling='partitioned EP/ODE then implicit FSI',
             performance=dict(scope='this invocation; setup and output excluded from step times',
                 profile_enabled=bool(profile),setup_seconds=setup_seconds,
+                elapsed_this_invocation_seconds=invocation_elapsed,
+                elapsed_previous_seconds=elapsed_previous,
+                elapsed_seconds_scope='top-level elapsed_seconds is cumulative through checkpoint ancestry; elapsed sampled before publication IO',
                 measured_steps=len(measured_steps),
                 first_step_seconds=measured_steps[0]['step_wall_seconds'] if measured_steps else None,
                 mean_step_seconds=sum(r['step_wall_seconds'] for r in measured_steps)/len(measured_steps) if measured_steps else None,

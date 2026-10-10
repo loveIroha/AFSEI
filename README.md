@@ -14,6 +14,10 @@ MAC 的物理瓣口与流量驱动 RCR 待接入。
 门控保持冻结，用原 MAC 被动试算检查初始漂移。该规定压力预加载与实际流量/RCR 接口分开记录，
 详情见 [MAC 预加载与性能](docs/MAC_PRELOAD_PHASE10.md)。
 
+第十一阶段将源 Land 主动力的自动微分切线改为解析切线并编译为 GPU 张量内核。
+保留空间积分、伸长反馈、额外主动应力乘子和冻结卸载导数，沿用原 MAC 隐式残差与收敛条件。
+实测对照和循环端口的后续工作见 [主动切线优化](docs/MAC_ACTIVE_TANGENT_PHASE11.md)。
+
 ```bash
 python scripts/prepare_afsei_mac_preload.py --output results/my_mac_preload_8mmhg
 python scripts/run_afsei.py --resume results/my_mac_preload_8mmhg/checkpoint.npz --duration-ms 10 --profile --output results/my_mac_preloaded_10ms
