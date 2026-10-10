@@ -18,6 +18,10 @@ MAC 的物理瓣口与流量驱动 RCR 待接入。
 保留空间积分、伸长反馈、额外主动应力乘子和冻结卸载导数，沿用原 MAC 隐式残差与收敛条件。
 实测对照和循环端口的后续工作见 [主动切线优化](docs/MAC_ACTIVE_TANGENT_PHASE11.md)。
 
+第十二阶段建立随基底边缘运动的封面、理想化 MV/AV 区域与原 MAC 上的相对流量/压力功算子。
+真实 LV 的三个状态已检查质量缺口和非端口泄流；密封、单向阀与 RCR 尚未施加到主线。
+检查入口、VTK 输出与耗时见 [MAC 端口算子](docs/MAC_PORT_OPERATORS_PHASE12.md)。
+
 ```bash
 python scripts/prepare_afsei_mac_preload.py --output results/my_mac_preload_8mmhg
 python scripts/run_afsei.py --resume results/my_mac_preload_8mmhg/checkpoint.npz --duration-ms 10 --profile --output results/my_mac_preloaded_10ms
