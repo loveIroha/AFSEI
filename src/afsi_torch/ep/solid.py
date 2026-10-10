@@ -1,7 +1,8 @@
 """EP-driven active load adapter for the existing real-LV BE/IB solid API.
 
-No prescribed waveform is read. Fluid pressure acts via the fluid/solid
-interface; the adapter applies zero additional endocardial pressure traction.
+No prescribed active waveform is read. Fluid pressure acts via the fluid/solid
+interface. An optional fixed endocardial traction retains the original AFSI
+preloading mechanism; it is not a physical cavity/RCR pressure boundary.
 The AFSEI driver publishes accepted EP/Land state and its own checkpoints.
 Physical circulation ports and preload remain separate pending components.
 """
@@ -13,15 +14,19 @@ from ..paper_lv import PaperLVSolid, PaperHOTangent
 
 @dataclass(frozen=True)
 class InterfaceLoads:
+    pressure_mmhg: float = 0.
+
     def at(self, time):
         if not isfinite(time) or time < 0:
             raise ValueError('nonnegative finite force time required')
-        return 0., 0.
+        from .windkessel import MMHG_TO_DYN_CM2
+        return self.pressure_mmhg*MMHG_TO_DYN_CM2, 0.
 
 
 class EPDrivenPaperSolid(PaperLVSolid):
     """Prepared per-trial solid with fixed EP states and differentiable Land Ta."""
-    def __init__(self, mesh, config, active_load,*,source_quadrature=False):
+    def __init__(self, mesh, config, active_load,*,source_quadrature=False,
+                 prescribed_pressure_mmhg=0.):
         super().__init__(mesh, config)
         if source_quadrature:
             from .source_mechanics import source_basal_surface
@@ -39,12 +44,14 @@ class EPDrivenPaperSolid(PaperLVSolid):
         if active_load.geometry.weights.shape != self.geometry.weights.shape:
             raise ValueError('active and passive quadrature rules must match')
         self.active_load = active_load
-        self.loads = InterfaceLoads()
+        if not isfinite(prescribed_pressure_mmhg) or prescribed_pressure_mmhg < 0:
+            raise ValueError('nonnegative finite prescribed endocardial pressure required')
+        self.loads = InterfaceLoads(prescribed_pressure_mmhg)
+        self.prescribed_pressure_cgs = self.loads.at(0.)[0]
 
     def force_from_geometry(self, x, F, endo_area, loads):
-        # Never add the legacy pressure/tension even if an execution caller
-        # supplies a cached old pair. The current fluid stress carries pressure.
-        passive = super().force_from_geometry(x,F,endo_area,(0.,0.))
+        # A stale legacy waveform must not override the explicit fixed traction.
+        passive = super().force_from_geometry(x,F,endo_area,(self.prescribed_pressure_cgs,0.))
         return passive+self.active_load.force(x)
 
     def tangent_factory(self, chunk_size=2048):
@@ -59,7 +66,7 @@ class EPDrivenPaperSolid(PaperLVSolid):
         result.update(minimum_active_stretch_multiplier=multiplier.min().item(),
                       negative_active_multiplier_cell_count=0,
                       minimum_land_tension_cgs=ta.min().item(),maximum_land_tension_cgs=ta.max().item(),
-                      additional_endocardial_pressure_cgs=0.)
+                      additional_endocardial_pressure_cgs=self.prescribed_pressure_cgs)
         return result
 
 

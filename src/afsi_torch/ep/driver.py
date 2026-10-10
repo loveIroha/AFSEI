@@ -75,7 +75,8 @@ class AFSEIStepper:
         n = len(mesh.X); zero = mesh.X.new_zeros(n)
         self.buffer.stage(ActiveLoadState(mesh.X,zero,zero,zero,zero,config.fsi.time.dt,False))
         self.model = EPDrivenPaperSolid(mesh,config.fsi,self.buffer,
-                                       source_quadrature=config.mechanics_profile == 'source')
+            source_quadrature=config.mechanics_profile == 'source',
+            prescribed_pressure_mmhg=config.prescribed_endocardial_pressure_mmhg)
         if config.direction_mapping == 'source-serial-cg1':
             fiber,sheet,self.stimulus_mask,self.mapping_owner = source_p1_fields(mesh)
             self.ep = Monodomain(mesh.X,mesh.cells,fiber,sheet,directions='nodal',parameters=config.ep)

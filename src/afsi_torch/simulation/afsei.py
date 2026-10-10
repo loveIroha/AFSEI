@@ -1,7 +1,8 @@
 """Standalone AFSEI short EP/FSI experiment with restart and numeric history.
 
-Initial reference geometry at first pace has NOT undergone 8 mmHg preload.
-The inherited MAC box pressure is zero, and physical AV/MV/RCR ports remain
+Fresh runs use unpreloaded reference geometry. MAC source-traction preload
+checkpoints retain the prescribed traction and loading history. The MAC box
+pressure boundary is zero, and physical AV/MV/RCR ports remain
 pending. Reports distinguish integrated three-field advancement from a
 validated physiological full cardiac cycle.
 """
@@ -118,11 +119,16 @@ def run(*,config=None,output=None,resume=None,duration_s=.002,device='cuda',prof
             fluid_advanced=state.fsi.step > 0,
             ep_fsi_time_integration_implemented=True,three_field_integration_implemented=False,
             windkessel_ports_connected=False,source_full_cycle_reproduced=False,
-            preload_performed=False,physical_valve_events_detected=False,
-            limitations=['reference geometry at first stimulus; no 8 mmHg preload',
-                         'MAC outer-box zero-pressure boundaries; no physical AV/MV port seal',
+            preload_performed=bool(progress.get('preload',{}).get('preload_performed',False)),
+            preload=progress.get('preload'),
+            prescribed_endocardial_pressure_mmhg=config.prescribed_endocardial_pressure_mmhg,
+            physical_valve_events_detected=False,
+            limitations=['MAC outer-box zero-pressure boundaries; no physical AV/MV port seal',
                          'RCR and valve-event hooks not connected to the physical fluid boundary',
                          'partitioned EP then implicit FSI; not monolithic EP-FSI Newton']
+                        + (['prescribed endocardial traction retained; physical flow-driven cavity pressure pending']
+                           if progress.get('preload',{}).get('preload_performed') else
+                           ['reference geometry at first stimulus; no 8 mmHg preload'])
                         + (['inherited mechanical coefficients; source profile not selected']
                            if config.mechanics_profile != 'source' else []),
             checkpoint='checkpoint.npz',history='history.csv',progress=progress)
@@ -149,8 +155,9 @@ def run(*,config=None,output=None,resume=None,duration_s=.002,device='cuda',prof
                 print(f'AFSEI step={state.fsi.step}, time={state.fsi.time*1000:.3f} ms, '
                       f'EP={progress["ep_steps"]}, Ta_max={latest["tension_max_cgs"]:.6g} dyn/cm2, '
                       f'max|dx|={latest["maximum_displacement_cm"]:.3g} cm, '
-                      f'max|u|={latest["maximum_fluid_velocity_cm_per_s"]:.3g} cm/s',flush=True)
-            if state.fsi.step % config.fsi.output.checkpoint_every == 0: publish('running')
+                      f'max|u|={latest["maximum_fluid_velocity_cm_per_s"]:.3g} cm/s, '
+                      f'step_wall={latest["step_wall_seconds"]:.3f}s',flush=True)
+            if state.tick < target and state.fsi.step % config.fsi.output.checkpoint_every == 0: publish('running')
         return publish('completed')
     except (Exception,KeyboardInterrupt) as exc:
         progress['failure'] = dict(type=type(exc).__name__,message=str(exc),last_accepted_step=state.fsi.step,

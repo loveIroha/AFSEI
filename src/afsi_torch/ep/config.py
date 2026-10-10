@@ -19,6 +19,8 @@ class AFSEIConfig:
     direction_mapping: str = 'source-serial-cg1'
     # Missing in old checkpoints: inherited preserves their exact parameters.
     mechanics_profile: str = 'inherited'
+    # Original AFSI endocardial traction; distinct from physical fluid/RCR pressure.
+    prescribed_endocardial_pressure_mmhg: float = 0.
 
     @classmethod
     def source(cls,*,fsi=None,**kwargs):
@@ -30,7 +32,9 @@ class AFSEIConfig:
                 or type(self.max_retries) is not int or self.max_retries < 0
                 or self.direction_mapping not in ('source-serial-cg1','afsi-dg0')
                 or self.mechanics_profile not in ('inherited','source')
-                or not isfinite(self.start_time_s) or self.start_time_s < 0):
+                or not isfinite(self.start_time_s) or self.start_time_s < 0
+                or not isfinite(self.prescribed_endocardial_pressure_mmhg)
+                or self.prescribed_endocardial_pressure_mmhg < 0):
             raise ValueError('invalid AFSEI integration settings')
         if self.mechanics_profile == 'source' and not source_parameters_match(self.fsi):
             raise ValueError('source mechanics profile requires the pinned source material and basal coefficients')

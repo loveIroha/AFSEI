@@ -5,9 +5,19 @@ AFSEI：电–流固三场耦合（electrophysiology–fluid–solid interaction
 当前主线采用原 AFSI_GPU 的规则 MAC 网格与 BE–BE 隐式流固求解器，入口为 `scripts/run_afsei.py`。
 EP 单域 PDE 使用 PyTorch GPU，GPB/Land 使用 CUDA；主动张力取代原自定义波形。
 默认配置恢复为原真实 LV 的 128³、13 cm 外箱及已有求解器优化，保留源电–力材料、基底和方向映射。
-本阶段仍从未预加载的参考几何开始；MAC 的物理瓣口、流量驱动 RCR 及相容预加载待接入。
+直接新建运行从未预加载的参考几何开始，也可通过下述 MAC 预加载入口初始化。
+MAC 的物理瓣口与流量驱动 RCR 待接入。
 贴体四面体路线保留为已有实验记录；其检查点与 MAC 不兼容。
 运行方法与实测性能见 [MAC 主线](docs/MAC_MAINLINE_PHASE9.md)。
+
+第十阶段增加源内膜规定压力的 MAC 预加载：保留 100×5 ms 的 Land 应变历史，
+门控保持冻结，用原 MAC 被动试算检查初始漂移。该规定压力预加载与实际流量/RCR 接口分开记录，
+详情见 [MAC 预加载与性能](docs/MAC_PRELOAD_PHASE10.md)。
+
+```bash
+python scripts/prepare_afsei_mac_preload.py --output results/my_mac_preload_8mmhg
+python scripts/run_afsei.py --resume results/my_mac_preload_8mmhg/checkpoint.npz --duration-ms 10 --profile --output results/my_mac_preloaded_10ms
+```
 
 ```bash
 cd /mnt/large2/gjh/AFSEI
@@ -135,8 +145,9 @@ python scripts/check_afsei_mechanics.py
 新检出仓库需要先运行 `bash scripts/prepare_afsei_mechanics_reference.sh`，
 此步骤使用现有独立 FEniCS 环境，不向 AFSEI 环境安装 DOLFIN。
 
-第二阶段的 `run_afsei.py` 从参考几何的首次刺激时刻开始，**没有执行 8 mmHg 预充盈，也没有连接
-AV/MV/Windkessel 物理端口**。该旧入口的外箱仍为零压力开放边界；使用上述第七阶段入口可从预加载状态启动新的双向驱动。
+`run_afsei.py` 直接新建运行时从参考几何的首次刺激时刻开始；
+第十阶段 `prepare_afsei_mac_preload.py` 可提供源内膜规定压力的 MAC 预加载检查点。
+MAC 外箱仍为零压力开放边界，AV/MV/Windkessel 物理端口待接入。
 报告将 `ep_fsi_time_integration_implemented` 与完整三场周期状态分别列出。
 
 ## 固定腔体端口与 Windkessel 检查

@@ -51,6 +51,7 @@ def main():
         'ode_substeps','rejected_attempts','elapsed_seconds','fluid_shape','direction_mapping',
         'fluid_discretization','fsi_solver','performance','mechanics_profile',
         'source_mechanics_parameters_aligned','ep_fsi_time_integration_implemented',
+        'preload_performed','prescribed_endocardial_pressure_mmhg',
         'windkessel_ports_connected','three_field_integration_implemented')},indent=2))
 
 

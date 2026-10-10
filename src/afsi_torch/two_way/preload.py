@@ -5,6 +5,10 @@ Optional nominal loading time separately updates strain/distortion history.
 The reference mesh/material fields are retained. Pressure acts on the entire
 closed interface, including the idealized basal cap, exactly as in the FSI
 reaction. No additional endocardial pressure is applied after initialization.
+
+Explicit pressure_load and geometry_validator adapters also allow the source
+endocardial-traction problem to reuse static continuation on the original MAC
+framework; the default closed fitted-fluid path is unchanged.
 """
 from dataclasses import dataclass,field,replace
 from math import isfinite
@@ -161,9 +165,10 @@ class PreloadResult:
 
 
 class PassivePreloader:
-    def __init__(self,driver,config=None,*,pressure_load=None):
+    def __init__(self,driver,config=None,*,pressure_load=None,geometry_validator=None):
         self.driver=driver; self.config=config or PreloadConfig()
         self.pressure=ClosedPressure(driver.blood_driver.mesh) if pressure_load is None else pressure_load
+        self.geometry_validator=geometry_validator
         self.basis=coarse_basis(driver.mesh.X,self.config.coarse_shape)
         from ..paper_lv import PaperHOTangent
         # Static preload explicitly has zero active stress: its exact active
@@ -180,7 +185,9 @@ class PassivePreloader:
             next_target=c.target_mmhg if not c.nominal_steps else c.target_mmhg*(nominal+1)/c.nominal_steps
             candidate=min(pressure+step,next_target,c.target_mmhg); cache={}
             def validate(y):
-                d.model.validate(y); swept_geometry(d.blood_driver.mesh,x,y,.001)
+                d.model.validate(y)
+                if self.geometry_validator is None: swept_geometry(d.blood_driver.mesh,x,y,.001)
+                else: self.geometry_validator(x,y)
             def residual(y): return -d.model.force(y,d.config.start_time_s)-self.pressure.force(y,candidate)
             def linearization(y):
                 K=self.tangent.assemble(y,d.config.start_time_s)
