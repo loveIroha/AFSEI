@@ -22,6 +22,11 @@ MAC 的物理瓣口与流量驱动 RCR 待接入。
 真实 LV 的三个状态已检查质量缺口和非端口泄流；密封、单向阀与 RCR 尚未施加到主线。
 检查入口、VTK 输出与耗时见 [MAC 端口算子](docs/MAC_PORT_OPERATORS_PHASE12.md)。
 
+第十三阶段新增原 MAC 上的局部基底约束投影验证，联合检查散度、相对流量、材料反力和能量。
+真实检查点上净泄漏降至约 1e-9 ml/s，但积分点残余泄漏仍需处理；
+本组件尚未接入完整隐式流固主线，单向阀与 RCR 仍待完成。
+实际额外压力成本及运行方式见 [局部基底密封验证](docs/MAC_LOCAL_SEAL_PHASE13.md)。
+
 ```bash
 python scripts/prepare_afsei_mac_preload.py --output results/my_mac_preload_8mmhg
 python scripts/run_afsei.py --resume results/my_mac_preload_8mmhg/checkpoint.npz --duration-ms 10 --profile --output results/my_mac_preloaded_10ms
