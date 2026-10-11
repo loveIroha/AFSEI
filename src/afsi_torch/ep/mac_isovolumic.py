@@ -156,6 +156,15 @@ class IsovolumicEndpointStepper(BEIBStepper):
             self.flow.pressure_solver = SpectralDirichletPressure(self.grid,
                 device=owner.mesh.X.device,options=config.pressure_solver)
 
+    def make_problem(self, state, stencil, departure, control):
+        if self.owner.closed_cap:
+            from .mac_cap_coupled import CapIsovolumicProblem
+            return CapIsovolumicProblem(self, state, stencil, departure, control)
+        return IsovolumicProblem(self, state, stencil, departure, control)
+
+    def volume_error(self, problem, volume, control):
+        return (volume-control.target_volume_ml).item()
+
     @torch.no_grad()
     def physical_step(self, state, new_time, diagnostics):
         control = self.owner._iso_context
@@ -166,11 +175,7 @@ class IsovolumicEndpointStepper(BEIBStepper):
         before = (self.flow.calls, self.flow.pressure_cycles, self.flow.helmholtz_sweeps,
                   self.mass_calls, self.mass_iterations)
         direct_before = getattr(self.flow.pressure_solver,'direct_solves',0)
-        if self.owner.closed_cap:
-            from .mac_cap_coupled import CapIsovolumicProblem
-            problem = CapIsovolumicProblem(self, state, stencil, departure, control)
-        else:
-            problem = IsovolumicProblem(self, state, stencil, departure, control)
+        problem = self.make_problem(state, stencil, departure, control)
         initial = torch.zeros_like(state.x)
         if state.previous_x is not None:
             initial = (state.x-state.previous_x)*(self.flow.dt/(state.previous_dt or self.flow.dt))
@@ -185,7 +190,7 @@ class IsovolumicEndpointStepper(BEIBStepper):
             options=options)
         residual = problem.accepted(result.x)
         x, p, volume, force, velocity, pressure, flow, nodal, density, spread, interpolation = problem.last_data
-        error = (volume-control.target_volume_ml).item()
+        error = self.volume_error(problem, volume, control)
         if residual.norm().item() > tolerance or abs(error) > VOLUME_TOLERANCE_ML:
             raise NonlinearFailure('isovolumic true residual/volume exceeds target', result)
         self.check_support(x)

@@ -19,6 +19,7 @@ from .protocol import CycleState
 from .buffered_load import ActiveLoadState
 from .mac_isovolumic import IsovolumicState,IsovolumicAFSEIStepper
 from .windkessel import WindkesselParameters
+from .mac_rcr_coupled import RCRState,RCRAFSEIStepper
 
 MESH = ('X','cells','faces','facet_tags','boundary_cells','boundary_local_facets','fiber','sheet')
 INTEGER = {'cells','faces','facet_tags','boundary_cells','boundary_local_facets'}
@@ -39,6 +40,9 @@ def digest(metadata,data):
 def save(path,driver,state,progress=None):
     driver._check_clock(state)
     isovolumic = isinstance(state,IsovolumicState)
+    rcr = isinstance(state,RCRState)
+    if rcr and not isinstance(driver,RCRAFSEIStepper):
+        raise ValueError('coupled RCR state requires its own execution/history driver')
     if isovolumic: driver.validate_control(state)
     array = lambda v: v.detach().cpu().numpy()
     data = {name:array(getattr(driver.mesh,name)) for name in MESH}
@@ -71,6 +75,14 @@ def save(path,driver,state,progress=None):
             cavity_pressure_mmhg=state.cavity_pressure_mmhg,arterial_pc_mmhg=state.arterial_pc_mmhg,
             windkessel=asdict(state.windkessel),accepted_closed_steps=state.accepted_closed_steps)
         metadata['isovolumic_execution'] = driver.execution_settings()
+        if rcr:
+            metadata['producer'] = 'afsei-mac-rcr-interval-validation'
+            metadata['circulation_ports_connected'] = True
+            control = metadata.pop('isovolumic')
+            control.update(outlet_open=state.outlet_open,accepted_port_steps=state.accepted_port_steps,
+                           boundary_history=state.boundary_history)
+            metadata['rcr'] = control
+            metadata['rcr_execution'] = metadata.pop('isovolumic_execution')
     metadata['sha256'] = digest(metadata,data)
     path = Path(path); path.parent.mkdir(parents=True,exist_ok=True)
     temporary = path.with_suffix(path.suffix+'.tmp')
@@ -85,9 +97,12 @@ def load(path,device='cuda'):
     try:
         metadata = json.loads(str(data.pop('metadata')))
         checksum = metadata.pop('sha256')
-        if (metadata.get('producer') not in ('afsei-ep-fsi','afsei-mac-isovolumic-validation') or metadata.get('schema') != 1
+        rcr = metadata.get('producer') == 'afsei-mac-rcr-interval-validation'
+        if rcr and ('rcr' not in metadata or 'rcr_execution' not in metadata):
+            raise ValueError('RCR control and execution settings required')
+        if (metadata.get('producer') not in ('afsei-ep-fsi','afsei-mac-isovolumic-validation','afsei-mac-rcr-interval-validation') or metadata.get('schema') != 1
                 or metadata.get('units') != 'cm-g-s; V; microA/cm2; GPB-ms-mV'
-                or metadata.get('circulation_ports_connected') is not False
+                or metadata.get('circulation_ports_connected') is not rcr
                 or not REQUIRED <= set(data) or set(data)-REQUIRED-OPTIONAL
                 or digest(metadata,data) != checksum):
             raise ValueError('invalid AFSEI checkpoint/schema/checksum; an AFSI-only checkpoint cannot resume EP')
@@ -97,10 +112,11 @@ def load(path,device='cuda'):
         config = _decode(AFSEIConfig,metadata['config'])
         tensor = lambda name: torch.as_tensor(data[name],device=device)
         mesh = ImportedSolidMesh(*(tensor(n) for n in MESH),metadata['vertex_count'],metadata['mesh_metadata'])
-        isovolumic = metadata['producer'] == 'afsei-mac-isovolumic-validation'
-        driver = (IsovolumicAFSEIStepper if isovolumic else AFSEIStepper)(mesh,config)
-        if isovolumic and 'isovolumic_execution' in metadata:
-            driver.set_execution(**metadata['isovolumic_execution'])
+        isovolumic = rcr or metadata['producer'] == 'afsei-mac-isovolumic-validation'
+        driver = (RCRAFSEIStepper if rcr else IsovolumicAFSEIStepper if isovolumic else AFSEIStepper)(mesh,config)
+        execution = 'rcr_execution' if rcr else 'isovolumic_execution'
+        if isovolumic and execution in metadata:
+            driver.set_execution(**metadata[execution])
         optional = lambda name: tensor(name) if name in data else None
         fsi = PaperState(metadata['step'],metadata['time'],tensor('x'),tuple(tensor(f'velocity_{c}') for c in range(3)),
             tensor('pressure'),tensor('force'),metadata['force_time'],pressure_time=metadata['pressure_time'],
@@ -112,9 +128,9 @@ def load(path,device='cuda'):
             **metadata['active_load'],anchor=optional('force_anchor'))
         state = CoupledState(metadata['tick'],fsi,tissue,strain,cycle,active,tensor('ionic_current'),metadata['rejected_attempts'])
         if isovolumic:
-            control = dict(metadata['isovolumic'])
+            control = dict(metadata['rcr' if rcr else 'isovolumic'])
             control['windkessel'] = WindkesselParameters(**control['windkessel'])
-            state = IsovolumicState(state,**control)
+            state = (RCRState if rcr else IsovolumicState)(state,**control)
             if 'cap_pressure' in data or 'cap_geometry' in data:
                 from dataclasses import replace
                 state = replace(state,cap_pressure=optional('cap_pressure'),cap_geometry=optional('cap_geometry'))

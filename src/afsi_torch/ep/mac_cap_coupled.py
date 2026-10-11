@@ -25,7 +25,7 @@ def closed_rows(endpoint, x):
 class CapIsovolumicProblem(IsovolumicProblem):
     def __init__(self, *args):
         super().__init__(*args)
-        self.rows = closed_rows(self.driver, self.state.x)
+        self.rows = self.prepare_rows()
         self.mechanical_size = self.state.x.numel()
         # Convert a cap residual to cm; choose pressure units giving an
         # approximately unit kinetic diagonal. Acceptance checks physical flux.
@@ -36,6 +36,9 @@ class CapIsovolumicProblem(IsovolumicProblem):
         self.setup_pressure_calls = 0
         self.preconditioner_rebuilt = False
         self._prepare_preconditioner()
+
+    def prepare_rows(self):
+        return closed_rows(self.driver, self.state.x)
 
     @property
     def extra_unknowns(self): return 1+self.rows.count

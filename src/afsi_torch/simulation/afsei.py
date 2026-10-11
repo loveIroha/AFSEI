@@ -2,9 +2,10 @@
 
 Fresh runs use unpreloaded reference geometry. MAC source-traction preload
 checkpoints retain the prescribed traction and loading history. The MAC box
-pressure boundary is zero, and physical AV/MV/RCR ports remain
-pending. Reports distinguish integrated three-field advancement from a
-validated physiological full cardiac cycle.
+pressure boundary is zero. RCR interval checkpoints restore measured outlet
+flow/circuit validation; physical cavity-pressure identification and cardiac
+phase control remain pending. Reports distinguish these short integrations
+from a validated physiological full cardiac cycle.
 """
 import csv
 from dataclasses import asdict
@@ -18,6 +19,7 @@ from ..ep.driver import AFSEIStepper
 from ..ep.protocol import ticks
 from ..ep.checkpoint import save as save_checkpoint,load as load_checkpoint
 from ..ep.mac_isovolumic import IsovolumicState,IsovolumicAFSEIStepper
+from ..ep.mac_rcr_coupled import RCRState
 from ..ep.mac_preload import MACEndocardialPressure
 from ..ep.windkessel import MMHG_TO_DYN_CM2 as PRESSURE_TO_CGS
 
@@ -43,12 +45,16 @@ def run(*,config=None,output=None,resume=None,duration_s=.002,device='cuda',prof
         driver = AFSEIStepper(mesh,config)
         state = driver.initialize()
         progress = dict(ep_steps=0,ode_substeps=0,elapsed_seconds=0.)
+    rcr_interval = isinstance(state,RCRState)
+    if isovolumic and rcr_interval:
+        raise ValueError('RCR outlet interval cannot be converted to a fixed-volume phase without a phase controller')
     if isovolumic and not isinstance(state,IsovolumicState):
         if any((folder/name).exists() for name in ('checkpoint.npz','report.json','history.csv')):
             raise ValueError('enabling isovolumic mode requires a fresh output folder')
         driver = IsovolumicAFSEIStepper.from_driver(driver)
         state = driver.lock(state)
     constrained = isinstance(state,IsovolumicState)
+    fixed_volume = constrained and not rcr_interval
     if pressure_backend is not None or response_optimizations is not None:
         if not constrained: raise ValueError('isovolumic execution options require isovolumic mode')
         driver.set_execution(pressure_backend=pressure_backend,response_optimizations=response_optimizations)
@@ -78,9 +84,12 @@ def run(*,config=None,output=None,resume=None,duration_s=.002,device='cuda',prof
         if constrained:
             diagnostics.update(cavity_pressure_mmhg=state.cavity_pressure_mmhg,
                 additional_endocardial_pressure_cgs=state.cavity_pressure_mmhg*PRESSURE_TO_CGS,
-                isovolumic_target_ml=state.target_volume_ml,
-                isovolumic_error_ml=MACEndocardialPressure(driver.model).volume(state.fsi.x).item()-state.target_volume_ml,
                 arterial_pc_mmhg=state.arterial_pc_mmhg)
+            if rcr_interval:
+                diagnostics.update({f'rcr_{k}':v for k,v in info.get('rcr',{}).items()})
+            else:
+                diagnostics.update(isovolumic_target_ml=state.target_volume_ml,
+                    isovolumic_error_ml=MACEndocardialPressure(driver.model).volume(state.fsi.x).item()-state.target_volume_ml)
             if driver.closed_cap:
                 diagnostics.update({f'cap_{k}':v for k,v in info.get('cap',{}).items()})
         ep_info = info.get('ep',{})
@@ -124,13 +133,18 @@ def run(*,config=None,output=None,resume=None,duration_s=.002,device='cuda',prof
             node_count=len(driver.mesh.X),cell_count=len(driver.mesh.cells),fluid_shape=driver.config.fsi.fluid.shape,
             fluid_discretization='cartesian-staggered-MAC',
             fsi_solver='original-MAC-response; augmented-Newton' if constrained else 'upstream-BEIBStepper',
-            cavity_mode=('closed-cap-isovolumic-validation' if driver.closed_cap else 'isovolumic-validation')
+            cavity_mode='mac-rcr-outlet-interval-validation' if rcr_interval else
+                ('closed-cap-isovolumic-validation' if driver.closed_cap else 'isovolumic-validation')
                 if constrained else 'prescribed-traction',
-            isovolumic_constraint_implemented=constrained,isovolumic_validation_only=constrained,
+            isovolumic_constraint_implemented=fixed_volume,isovolumic_validation_only=fixed_volume,
             windkessel_closed_state_advanced=constrained and state.accepted_closed_steps>0,
-            assumed_closed_outlet_for_0d_update=constrained,
-            isovolumic_execution=driver.execution_settings() if constrained else None,
-            closed_cap_reactions_in_same_implicit_fsi_solve=constrained and state.cap_pressure is not None,
+            assumed_closed_outlet_for_0d_update=fixed_volume,
+            isovolumic_execution=driver.execution_settings() if fixed_volume else None,
+            rcr_execution=driver.execution_settings() if rcr_interval else None,
+            rcr_boundaries_in_same_implicit_fsi_solve=rcr_interval and state.cap_pressure is not None,
+            circuit_condition_probe='circuit_condition_probe' in progress,
+            physical_cavity_pressure_identification_pending=rcr_interval,
+            closed_cap_reactions_in_same_implicit_fsi_solve=fixed_volume and state.cap_pressure is not None,
             pointwise_impermeability_established=False,
             fsi_coupling='implicit-BE-BE; old-position IB templates',
             ep_fsi_coupling='partitioned EP/ODE then implicit FSI',
@@ -153,13 +167,17 @@ def run(*,config=None,output=None,resume=None,duration_s=.002,device='cuda',prof
             config=asdict(config),last_state=last,solid_motion_advanced=state.fsi.step > 0,
             fluid_advanced=state.fsi.step > 0,
             ep_fsi_time_integration_implemented=True,three_field_integration_implemented=False,
-            windkessel_ports_connected=False,source_full_cycle_reproduced=False,
+            windkessel_ports_connected=rcr_interval,source_full_cycle_reproduced=False,
             preload_performed=bool(progress.get('preload',{}).get('preload_performed',False)),
             preload=progress.get('preload'),
             prescribed_endocardial_pressure_mmhg=None if constrained else config.prescribed_endocardial_pressure_mmhg,
             reference_traction_mmhg=config.prescribed_endocardial_pressure_mmhg,
             physical_valve_events_detected=False,
-            limitations=['MAC outer-box zero-pressure boundaries; no physical AV/MV port seal',
+            limitations=(['original MAC measured AV flow/RCR interval; no cardiac phase controller',
+                          'source wall control pressure and physical fluid pressure identification pending',
+                          'weak closed-region averages do not establish pointwise wall impermeability',
+                          'partitioned EP then implicit FSI; not monolithic EP-FSI Newton'] if rcr_interval else
+                         ['MAC outer-box zero-pressure boundaries; no physical AV/MV port seal',
                          'RCR and valve-event hooks not connected to the physical fluid boundary',
                          'partitioned EP then implicit FSI; not monolithic EP-FSI Newton']
                         + (['joint weak cap constraints verified; pointwise impermeability and valve events pending']
@@ -167,7 +185,7 @@ def run(*,config=None,output=None,resume=None,duration_s=.002,device='cuda',prof
                            ['global volume constraint verified independently; local impermeability and physical valve events pending']
                            if constrained else ['prescribed endocardial traction retained; physical flow-driven cavity pressure pending']
                            if progress.get('preload',{}).get('preload_performed') else
-                           ['reference geometry at first stimulus; no 8 mmHg preload'])
+                           ['reference geometry at first stimulus; no 8 mmHg preload']))
                         + (['inherited mechanical coefficients; source profile not selected']
                            if config.mechanics_profile != 'source' else []),
             checkpoint='checkpoint.npz',history='history.csv',progress=progress)
@@ -196,7 +214,12 @@ def run(*,config=None,output=None,resume=None,duration_s=.002,device='cuda',prof
                       f'max|dx|={latest["maximum_displacement_cm"]:.3g} cm, '
                       f'max|u|={latest["maximum_fluid_velocity_cm_per_s"]:.3g} cm/s, '
                       f'step_wall={latest["step_wall_seconds"]:.3f}s',flush=True)
-                if constrained:
+                if rcr_interval:
+                    rcr = info['rcr']
+                    print(f'  RCR Q={rcr["measured_relative_q_ml_s"]:.6g} ml/s, '
+                          f'Pc={state.arterial_pc_mmhg:.6f} mmHg, '
+                          f'mass={rcr["mass_error_ml_s"]:.3g} ml/s',flush=True)
+                elif constrained:
                     print(f'  Iso Pcavity={state.cavity_pressure_mmhg:.6f} mmHg, '
                           f'Vtarget={state.target_volume_ml:.9f} ml, '
                           f'dV={latest["isovolumic_error_ml"]:.3g} ml',flush=True)

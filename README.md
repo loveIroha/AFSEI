@@ -6,7 +6,8 @@ AFSEI：电–流固三场耦合（electrophysiology–fluid–solid interaction
 EP 单域 PDE 使用 PyTorch GPU，GPB/Land 使用 CUDA；主动张力取代原自定义波形。
 默认配置恢复为原真实 LV 的 128³、13 cm 外箱及已有求解器优化，保留源电–力材料、基底和方向映射。
 直接新建运行从未预加载的参考几何开始，也可通过下述 MAC 预加载入口初始化。
-MAC 的物理瓣口与流量驱动 RCR 待接入。
+第二十阶段已提供实际出口流量/RCR 与原 MAC 隐式 Newton 同步联立的短程验证入口，
+普通入口可以恢复其检查点；腔压物理对应、局部无穿透与四阶段完整周期仍待完成。
 贴体四面体路线保留为已有实验记录；其检查点与 MAC 不兼容。
 运行方法与实测性能见 [MAC 主线](docs/MAC_MAINLINE_PHASE9.md)。
 
@@ -71,6 +72,19 @@ RCR 电容压力仅按假定闭合出口 Q=0 更新，本阶段尚未接入局�
 两个真实 128³ 几何的接口检查通过，暖边界响应约 0.046–0.047 s/步；此时间不含 EP/固体求解。
 该组件尚未接入 `run_afsei.py`，开放状态仍有体积/出口质量缺口，不能作为完整三场或生理周期结果。
 数学关系、性能范围及接入条件见 [MAC 出口与 RCR 边界响应](docs/MAC_RCR_BOUNDARY_PHASE19.md)。
+
+第二十阶段把实际 AV 相对流量、有限步体积质量关系、单向出口条件及 RCR 放进原 MAC 同一个 Newton 步，
+EP/GPB/Land 与运动心肌一同推进，不调用第十九阶段的冻结响应凝聚，也不增加外层完整 FSI 迭代。
+检查点原子保存循环状态与盖面反力历史，普通 `run_afsei.py --resume` 正确恢复 RCR 模式。
+真实 128³ 网格的关闭与开放验证均零回退，排除首步后的完整计算约 1.32–1.33 s/步。
+开放验证使用明确标记的非生理动脉初值探针；源腔压控制量尚不能直接认定为实际血压。
+主动张力/80 ms 卸载实现保持源项目，实际阶段事件和局部无穿透仍待验证。
+方程、性能、压力对应的限制及续算命令见 [同一步 MAC/EP/RCR 验证](docs/MAC_RCR_COUPLED_PHASE20.md)。
+
+```bash
+python scripts/run_afsei_mac_rcr.py --checkpoint results/phase18_mac128_cap2_analytic_gradient_10steps_v1/checkpoint.npz --steps 10 --output results/my_mac_rcr_coupled
+python scripts/run_afsei.py --resume results/my_mac_rcr_coupled/checkpoint.npz --duration-ms 1 --profile --output results/my_mac_rcr_more_1ms
+```
 
 ```bash
 python scripts/check_afsei_mac_rcr_boundary.py --checkpoint results/my_mac_closed_cap_10steps/checkpoint.npz --steps 20 --write-vtk --output results/my_mac_rcr_boundary
