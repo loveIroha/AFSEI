@@ -122,11 +122,11 @@ class TractionFreeCapProblem(CapIsovolumicProblem):
 
 
 @torch.no_grad()
-def traction_free_step(endpoint, old):
+def traction_free_step(endpoint, old, *, problem_class=TractionFreeCapProblem):
     """One discarded implicit mechanical/fluid trial; EP/ODE are not advanced."""
     before = endpoint.flow.calls
     stencil = endpoint.transfer.prepare(old.x)
-    problem = TractionFreeCapProblem(endpoint, old, stencil, endpoint.flow.advect(old.velocity))
+    problem = problem_class(endpoint, old, stencil, endpoint.flow.advect(old.velocity))
     z = old.x.new_zeros(old.x.numel()+problem.extra_unknowns)
     r0 = problem.residual(z)
     settings = endpoint.config.nonlinear

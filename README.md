@@ -101,6 +101,17 @@ EP/GPB/Land 与运动心肌一同推进，不调用第十九阶段的冻结响�
 检查入口不推进源检查点，原 MAC 网格、隐式框架和源张力/卸载保持原配置。
 结果及下一步的联合验证要求见 [静态压力载荷兼容性](docs/MAC_PRESSURE_COMPATIBILITY_PHASE23.md)。
 
+第二十四阶段实现隔离的功配对压力模态传递与闭合基底预加载验证。
+源内膜载荷保留独立定义，基底压力材料反力另行组装；从参考几何重算 100×5 ms Land 应变历史。
+去除规定内膜压力后，在原 MAC BE 方程中联立位移与基底压力，验证实际腔压和静止性。
+修正仅作用于一个全局压力模态，尚未启用正式周期驱动，不代表点位无穿透或完整三场周期。
+加载状态先单独保存，静态验收通过才另写带校验和的 `preload_result.npz`；两者均不是普通续算检查点。
+数学定义、真实验证结果及性能范围见 [压力配对与重新预加载](docs/MAC_BALANCED_PRELOAD_PHASE24.md)。
+
+```bash
+python scripts/initialize_afsei_mac_balanced.py --checkpoint results/phase10_mac128_source_preload_v1/checkpoint.npz --trials 3 --output results/my_mac_balanced_preload
+```
+
 ```bash
 python scripts/check_afsei_mac_pressure_compatibility.py --checkpoint results/phase10_mac128_source_preload_v1/checkpoint.npz --levels 3 4 --output results/my_mac_pressure_compatibility
 ```
