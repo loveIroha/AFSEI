@@ -92,6 +92,19 @@ EP/GPB/Land 与运动心肌一同推进，不调用第十九阶段的冻结响�
 源预加载几何和 Land 历史保持原数据；下一修复需建立与 MAC 离散一致的压力支承预加载平衡。
 验证入口、拒绝发布条件和实测结果见 [压力交接验证](docs/MAC_PRESSURE_HANDOFF_PHASE22.md)。
 
+第二十三阶段增加静态压力载荷的离散兼容性检查，区分原 MAC 压力求解器、
+源内膜节点力的体积传递、基底闭合以及边界核的积分误差。
+真实 128³ 网格的制造静压对照达到 8 mmHg、最大速度约 2.15e-9 cm/s；
+现有源材料力仍产生约 2.20 cm/s 的速度，不能只靠压力显示值确认平衡。
+局部复合 B 样条仅作为独立边界载荷候选，积分加密后仍有约 0.00362 cm/s 的残余速度，
+尚未接入正式 FE/基底传递或源力学；新压力支承预加载继续标记待完成。
+检查入口不推进源检查点，原 MAC 网格、隐式框架和源张力/卸载保持原配置。
+结果及下一步的联合验证要求见 [静态压力载荷兼容性](docs/MAC_PRESSURE_COMPATIBILITY_PHASE23.md)。
+
+```bash
+python scripts/check_afsei_mac_pressure_compatibility.py --checkpoint results/phase10_mac128_source_preload_v1/checkpoint.npz --levels 3 4 --output results/my_mac_pressure_compatibility
+```
+
 ```bash
 python scripts/check_afsei_mac_pressure_handoff.py --checkpoint results/phase10_mac128_source_preload_v1/checkpoint.npz --steps 3 --output results/my_pressure_handoff_check
 ```
