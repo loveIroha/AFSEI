@@ -12,10 +12,11 @@ from afsi_torch.mac.transfer import FETransfer
 
 @pytest.mark.parametrize('device',DEVICES)
 @pytest.mark.parametrize('recompute',[7,12,40])
-def test_graph_mass_recurrence_checks_and_owned_outputs(device,recompute):
+@pytest.mark.parametrize('check_every',[4,16])
+def test_graph_mass_recurrence_checks_and_owned_outputs(device,recompute,check_every):
     X,g,grid=setup(device)
     t=FETransfer(grid,g)
-    opt=SolverOptions(rtol=1e-11,atol=1e-13,recompute_every=recompute,check_every=4,max_iterations=500)
+    opt=SolverOptions(rtol=1e-11,atol=1e-13,recompute_every=recompute,check_every=check_every,max_iterations=500)
     a,b=MassSolver(t.mass,t.diagonal,opt),GraphMassSolver(t.mass,t.diagonal,opt)
     initial=.1*torch.cos(X)
     owned=[]

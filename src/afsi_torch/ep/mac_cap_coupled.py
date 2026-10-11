@@ -18,8 +18,9 @@ def closed_rows(endpoint, x):
     if not hasattr(endpoint, '_material_cap'):
         endpoint._material_cap = MACBasalPorts(endpoint.model.mesh.X,
             endpoint.model.endo_faces, endpoint.grid, with_ports=False)
-    return prepare_local_cap(endpoint._material_cap.prepare(x),
-        patch_width_cells=endpoint.owner.cap_patch_width_cells, regions=(0,1,2))
+    from .mac_compact_cap import compact_rows
+    return compact_rows(endpoint,prepare_local_cap(endpoint._material_cap.prepare(x),
+        patch_width_cells=endpoint.owner.cap_patch_width_cells, regions=(0,1,2)))
 
 
 class CapIsovolumicProblem(IsovolumicProblem):

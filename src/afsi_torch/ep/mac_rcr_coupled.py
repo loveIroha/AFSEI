@@ -54,9 +54,10 @@ def outlet_rows(endpoint, x, *, label=2):
         components.append((torch.cat((r, torch.full_like(pi[keep], closed.count))),
             torch.cat((index, pi[keep])), torch.cat((coefficient, coefficient_av))))
         diagonal += coefficient_av.square().sum()/endpoint.grid.volume
-    return LocalCapRows(p, torch.arange(len(p.points), device=x.device), patches,
+    from .mac_compact_cap import compact_rows
+    return compact_rows(endpoint,LocalCapRows(p, torch.arange(len(p.points), device=x.device), patches,
         torch.cat((closed.area, area.reshape(1))), tuple(components),
-        torch.cat((closed.diagonal, diagonal.reshape(1))))
+        torch.cat((closed.diagonal, diagonal.reshape(1)))))
 
 
 class RCRCoupledProblem(CapIsovolumicProblem):

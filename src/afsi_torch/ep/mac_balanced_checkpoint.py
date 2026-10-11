@@ -36,6 +36,8 @@ def save(path,driver,state,progress=None):
             outlet_open=state.outlet_open,accepted_port_steps=state.accepted_port_steps,
             cap_mode=state.cap_mode,filling_pressure_mmhg=state.filling_pressure_mmhg),
             balanced_execution=dict(level=driver.pressure_mode_level,
+                compact_cap_operators=driver.compact_cap_operators,
+                mass_graph_check_every=driver.mass_graph_check_every,
                 volume_transfer='integrated-p1-gradient-v1',
                 guard_cells=driver.pressure_guard_cells,one_way=driver.one_way,
                 cap_patch_width_cells=driver.cap_patch_width_cells,
@@ -82,6 +84,11 @@ def load(path,device='cuda',*,cardiac=False):
             raise ValueError('checkpoint uses a different volume transfer discretization')
         if cardiac: extra=meta['cardiac_execution']
         driver = driver_class(mesh,cfg,level=settings['level'],**extra)
+        # Execution settings preserve equations and all true-residual tolerances.
+        driver.compact_cap_operators=settings.get('compact_cap_operators',True)
+        driver.mass_graph_check_every=settings.get('mass_graph_check_every',16)
+        if type(driver.compact_cap_operators) is not bool or type(driver.mass_graph_check_every) is not int or not 1<=driver.mass_graph_check_every<=16:
+            raise ValueError('invalid balanced execution controls')
         driver.pressure_guard_cells = settings['guard_cells']; driver.one_way = settings['one_way']
         driver.cap_patch_width_cells = settings['cap_patch_width_cells']
         driver.valve_resistance_mmhg_s_per_ml = settings['valve_resistance_mmhg_s_per_ml']

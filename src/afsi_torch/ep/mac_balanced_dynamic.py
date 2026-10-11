@@ -57,6 +57,7 @@ class BalancedDynamicProblem(BalancedCapProblem):
         self.preconditioner_rebuilt = False
         self._prepare_preconditioner()
         self.last_open = False
+        self._cap_lu_cache = {}
         self.current_stencil = stencil
         self.closed_load = EndocardialAndCapPressure(endpoint.model)
         self.old_volume_gradient = closed_volume_gradient(state.x,self.load.faces,self.load.rim)
@@ -136,8 +137,7 @@ class BalancedDynamicProblem(BalancedCapProblem):
         force,u = self.last_data[3],self.last_data[4]
         d.transfer.reset_warm_start()
         base_nodal,_ = d.transfer.base.interpolate(u,stencil.original)
-        work = sum((v*b*face_weights(d.grid,c,b)).sum()
-            for c,(v,b) in enumerate(zip(u,stencil.target)))-(stencil.mode*base_nodal).sum()
+        work = d.transfer.target_power(u,stencil.target)-(stencil.mode*base_nodal).sum()
         amplitude = (stencil.dual*force).sum()
         middle = (self.state.x+x)/2
         def action(v):
@@ -167,15 +167,20 @@ class BalancedDynamicProblem(BalancedCapProblem):
 
     def preconditioner(self, z):
         d, rows = self.driver, self.rows
-        h = self.cap_h/d.flow.dt
-        if self.control.mode == 'rcr' and self.linear_open:
-            h = h.clone(); h[-1] = self.impedance*rows.area[-1]/d.flow.dt*self.cap_h[-1]
-            h[-1,-1] -= self.cap_scale[-1]/C
-        elif self.control.mode == 'filling':
-            h = h.clone(); h[-1] = 0.; h[-1,-1] = -self.cap_scale[-1]/C
-        # Apply the same invertible closed-row scaling to each column.
-        h = torch.stack([self.cap_row_units(v) for v in h.unbind(1)],1)
-        lu, pivots = torch.linalg.lu_factor(h)
+        key=self.linear_open
+        if key not in self._cap_lu_cache:
+            h = self.cap_h/d.flow.dt
+            if self.control.mode == 'rcr' and self.linear_open:
+                h = h.clone(); h[-1] = self.impedance*rows.area[-1]/d.flow.dt*self.cap_h[-1]
+                h[-1,-1] -= self.cap_scale[-1]/C
+            elif self.control.mode == 'filling':
+                h = h.clone(); h[-1] = 0.; h[-1,-1] = -self.cap_scale[-1]/C
+            # M H = H + 15*w*(w^T H), without launching one loop per column.
+            area=rows.area[:-1] if self.control.mode!='closed' else rows.area
+            n=len(area); w=area/area.norm()
+            h[:n] += 15*w[:,None]*(w@h[:n])[None,:]
+            self._cap_lu_cache[key]=torch.linalg.lu_factor(h)
+        lu,pivots=self._cap_lu_cache[key]
         def apply(v):
             self.preconditioner_applications += 1
             q = torch.linalg.lu_solve(lu,pivots,v[self.mechanical_size:,None]).flatten()
@@ -185,6 +190,9 @@ class BalancedDynamicProblem(BalancedCapProblem):
 
 class BalancedEndpoint(IsovolumicEndpointStepper):
     def __init__(self, owner, config):
+        if config.execution.mass_backend=='graph':
+            config=replace(config,mass_solver=replace(config.mass_solver,
+                check_every=owner.mass_graph_check_every))
         super().__init__(owner, config)
         self.transfer = PressureModeTransfer(self, level=owner.pressure_mode_level)
 
@@ -318,6 +326,8 @@ class BalancedAFSEIStepper(AFSEIStepper):
         self._pressure_scales = {}; self.pressure_backend = 'spectral'
         self.response_optimizations = True; self.cap_patch_width_cells = 3.
         self.port_geometry = None; self.one_way = True
+        self.compact_cap_operators = True
+        self.mass_graph_check_every = 16
         self.valve_resistance_mmhg_s_per_ml = 0.
 
     def _fsi_stepper(self,step_ticks):

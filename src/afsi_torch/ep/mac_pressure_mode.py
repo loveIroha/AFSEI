@@ -14,7 +14,8 @@ from .mac_mass_budget import ClosedCavityMassAudit
 from .mac_pressure_compatibility import surface_pressure_density, weighted_norm
 from .windkessel import MMHG_TO_DYN_CM2 as C
 from ..mac.grid import divergence
-from ..mac.open_boundary import gradient, face_weights, negative_laplacian
+from ..mac.open_boundary import gradient, negative_laplacian
+from ..mac.execution import tensor_kernel
 
 
 @dataclass(frozen=True)
@@ -47,6 +48,10 @@ class PressureModeTransfer:
         if isinstance(self.base, PressureModeTransfer):
             raise ValueError('pressure-mode transfer cannot be wrapped twice')
         self.endpoint, self.level = endpoint, level
+        # target is zero on box faces: its compact q and cap stencils have
+        # verified boundary margins. Thus W reduces exactly to cell volume.
+        self.target_power=tensor_kernel(lambda u,b: endpoint.grid.volume*sum(
+            (a*v).sum() for a,v in zip(u,b)),endpoint.model.mesh.X.device)
 
     def __getattr__(self, name):
         return getattr(self.base, name)
@@ -98,14 +103,15 @@ class PressureModeTransfer:
         correction = tuple(a+b-c for a, b, c in zip(g, lift, st))
         # Rigid-field consistency is essential: a pressure fix must not
         # silently change linear/angular momentum or rigid interpolation.
-        net = torch.stack([(b*face_weights(d.grid, c, b)).sum()
-                           for c, b in enumerate(correction)])
+        net = torch.stack([b.sum()*d.grid.volume for b in correction])
         torque = x.new_zeros(3)
         center = x.mean(0)
         for c, b in enumerate(correction):
-            r = d.grid.coordinates(c, device=x.device, dtype=x.dtype)-center
-            load = torch.zeros_like(r); load[..., c] = b*face_weights(d.grid, c, b)
-            torque += torch.linalg.cross(r, load).sum((0, 1, 2))
+            for axis,sign,out in (((c+2)%3,1,(c+1)%3),((c+1)%3,-1,(c+2)%3)):
+                coordinate=(d.grid.face_origin(c)[axis]+d.grid.spacing[axis]*
+                    torch.arange(b.shape[axis],device=x.device,dtype=x.dtype)-center[axis])
+                line=b.sum(tuple(j for j in range(3) if j!=axis))
+                torque[out] += sign*d.grid.volume*(coordinate*line).sum()
         residual = weighted_norm(d.grid, tuple(a-b for a, b in zip(density, gradient(q, d.grid.spacing))))
         if x.is_cuda: torch.cuda.synchronize(x.device)
         report = dict(setup_seconds=perf_counter()-started, surface_level=self.level,
@@ -156,7 +162,6 @@ class PressureModeTransfer:
     @torch.no_grad()
     def interpolate(self, velocity, stencil):
         nodal, info = self.base.interpolate(velocity, stencil.original)
-        power = sum((u*b*face_weights(self.grid, c, b)).sum()
-                    for c, (u, b) in enumerate(zip(velocity, stencil.target)))
+        power = self.target_power(velocity,stencil.target)
         power -= (stencil.mode*nodal).sum()
         return nodal+stencil.dual*power, info
