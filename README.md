@@ -65,6 +65,17 @@ RCR 电容压力仅按假定闭合出口 Q=0 更新，本阶段尚未接入局�
 真实 128³、0.1 ms 步的短程实测约 1.32 s/步；主要成本仍为隐式 FSI。
 核对结果、源压力与虚拟盖面的区别及后续范围见 [IB 输运一致性](docs/MAC_TRANSPORT_PHASE18.md)。
 
+第十九阶段在原 MAC 的冻结几何边界响应中连接实际相对出口流量与三元素 RCR，
+联立非出口基底弱闭合条件、出口单向条件及其配对材料反力。
+沿用已有理想化端口区域，未添加解剖瓣膜或替换主线网格、Land 张力及卸载。
+两个真实 128³ 几何的接口检查通过，暖边界响应约 0.046–0.047 s/步；此时间不含 EP/固体求解。
+该组件尚未接入 `run_afsei.py`，开放状态仍有体积/出口质量缺口，不能作为完整三场或生理周期结果。
+数学关系、性能范围及接入条件见 [MAC 出口与 RCR 边界响应](docs/MAC_RCR_BOUNDARY_PHASE19.md)。
+
+```bash
+python scripts/check_afsei_mac_rcr_boundary.py --checkpoint results/my_mac_closed_cap_10steps/checkpoint.npz --steps 20 --write-vtk --output results/my_mac_rcr_boundary
+```
+
 ```bash
 python scripts/check_afsei_mac_transport.py --checkpoint results/my_mac_closed_cap_10steps/checkpoint.npz --benchmark-gradients 30 --output results/my_mac_transport
 ```
