@@ -81,6 +81,16 @@ EP/GPB/Land 与运动心肌一同推进，不调用第十九阶段的冻结响�
 主动张力/80 ms 卸载实现保持源项目，实际阶段事件和局部无穿透仍待验证。
 方程、性能、压力对应的限制及续算命令见 [同一步 MAC/EP/RCR 验证](docs/MAC_RCR_COUPLED_PHASE20.md)。
 
+第二十一阶段增加独立的源内膜控制压力/MAC 腔内压力、载荷响应和完整内膜局部通量核对。
+真实预加载状态的控制压力约 8 mmHg 而 MAC 压力接近零；517 ms 原生状态分别约 11.98/2.04 mmHg，
+当前端口反力也未证明是生理腔压，必须先统一压力与受力再启用完整周期事件。
+诊断正确排除开放 AV 通流；该入口不推进检查点，也不增加正式步耗时。
+结果、压力交接的后续要求与运行方法见 [压力和界面核对](docs/MAC_PRESSURE_INTERFACE_PHASE21.md)。
+
+```bash
+python scripts/check_afsei_mac_pressure.py --checkpoint results/phase20_mac128_rcr_coupled_native_v2/checkpoint.npz --output results/my_mac_pressure_audit
+```
+
 ```bash
 python scripts/run_afsei_mac_rcr.py --checkpoint results/phase18_mac128_cap2_analytic_gradient_10steps_v1/checkpoint.npz --steps 10 --output results/my_mac_rcr_coupled
 python scripts/run_afsei.py --resume results/my_mac_rcr_coupled/checkpoint.npz --duration-ms 1 --profile --output results/my_mac_rcr_more_1ms
