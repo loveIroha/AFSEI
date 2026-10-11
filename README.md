@@ -6,8 +6,11 @@ AFSEI：电–流固三场耦合（electrophysiology–fluid–solid interaction
 EP 单域 PDE 使用 PyTorch GPU，GPB/Land 使用 CUDA；主动张力取代原自定义波形。
 默认配置恢复为原真实 LV 的 128³、13 cm 外箱及已有求解器优化，保留源电–力材料、基底和方向映射。
 直接新建运行从未预加载的参考几何开始，也可通过下述 MAC 预加载入口初始化。
-第二十阶段已提供实际出口流量/RCR 与原 MAC 隐式 Newton 同步联立的短程验证入口，
-普通入口可以恢复其检查点；腔压物理对应、局部无穿透与四阶段完整周期仍待完成。
+第二十五阶段完成压力配对预加载后的主动收缩与原生实际出口流量/RCR 短程验证。
+第二十六阶段提供正式四阶段周期入口 `scripts/run_afsei_cycle.py`，支持原子检查点与后台续算；
+主动收缩、闭瓣后固定体积 80 ms 卸载、平滑充盈至 8 mmHg 和再次刺激按源规则组织。
+该分支使用独立检查点。旧入口仍保留；两个完整周期与局部无穿透仍需实际验证。
+后台运行、续算与输出说明见 [四阶段周期驱动](docs/MAC_CARDIAC_CYCLE_PHASE26.md)。
 贴体四面体路线保留为已有实验记录；其检查点与 MAC 不兼容。
 运行方法与实测性能见 [MAC 主线](docs/MAC_MAINLINE_PHASE9.md)。
 
@@ -107,6 +110,17 @@ EP/GPB/Land 与运动心肌一同推进，不调用第十九阶段的冻结响�
 修正仅作用于一个全局压力模态，尚未启用正式周期驱动，不代表点位无穿透或完整三场周期。
 加载状态先单独保存，静态验收通过才另写带校验和的 `preload_result.npz`；两者均不是普通续算检查点。
 数学定义、真实验证结果及性能范围见 [压力配对与重新预加载](docs/MAC_BALANCED_PRELOAD_PHASE24.md)。
+
+第二十五阶段开启新预加载的 EP/GPB/Land，并在同一个原 MAC Newton 步连接实际相对 AV 流量和 RCR。
+删除这条新路径的旧规定内膜压力控制项；主动 PK1、伸长反馈、应变历史和 80 ms 卸载实现沿用源项目。
+压力传递模态采用沿候选位移精确积分的 P1 体积梯度，修复张力升高后的有限步质量缺口，
+配对传递和完整解析切线同时更新；不增加额外腔压控制未知量或外层完整流固求解。
+完整盖面关闭与实际出口开放使用独立验证检查点，自动四阶段及两周期验收继续待完成。
+数学关系、真实验证结果、性能及续算命令见 [主动收缩与实际流量 RCR](docs/MAC_BALANCED_DYNAMIC_RCR_PHASE25.md)。
+
+```bash
+python scripts/run_afsei_mac_balanced.py --preload results/phase24_mac128_balanced_preload_final_v1/preload_result.npz --reference-checkpoint results/phase10_mac128_source_preload_v1/checkpoint.npz --mode rcr --duration-ms 40 --output results/my_balanced_rcr_40ms
+```
 
 ```bash
 python scripts/initialize_afsei_mac_balanced.py --checkpoint results/phase10_mac128_source_preload_v1/checkpoint.npz --trials 3 --output results/my_mac_balanced_preload

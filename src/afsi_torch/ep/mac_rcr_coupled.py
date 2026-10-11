@@ -31,15 +31,15 @@ class RCRState(IsovolumicState):
     boundary_history: str = 'closed'
 
 
-def outlet_rows(endpoint, x):
+def outlet_rows(endpoint, x, *, label=2):
     """Retain local closed patches, plus ONE row for the entire idealized AV."""
     if not hasattr(endpoint, '_outlet_cap'):
         endpoint._outlet_cap = MACBasalPorts(endpoint.model.mesh.X,
             endpoint.model.endo_faces, endpoint.grid, ports=endpoint.owner.port_geometry)
     p = endpoint._outlet_cap.prepare(x)
     closed = prepare_local_cap(p, patch_width_cells=endpoint.owner.cap_patch_width_cells,
-                              regions=(0, 1))
-    av = p.cap.labels == 2
+                              regions=tuple(k for k in (0,1,2) if k != label))
+    av = p.cap.labels == label
     area = p.area_vectors[av].norm(dim=-1).sum()
     patches = torch.empty_like(p.cap.labels)
     patches[closed.selected] = closed.patches
@@ -48,8 +48,8 @@ def outlet_rows(endpoint, x):
     diagonal = area.new_zeros(())
     for local, port in zip(closed.components, p.rows.components):
         r, index, coefficient = local
-        label, pi, pc = port
-        keep = label == 2
+        labels, pi, pc = port
+        keep = labels == label
         coefficient_av = pc[keep]
         components.append((torch.cat((r, torch.full_like(pi[keep], closed.count))),
             torch.cat((index, pi[keep])), torch.cat((coefficient, coefficient_av))))

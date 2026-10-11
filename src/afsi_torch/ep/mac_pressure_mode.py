@@ -136,19 +136,21 @@ class PressureModeTransfer:
         return tuple(f+amplitude*b for f, b in zip(density, stencil.target)), info
 
     @torch.no_grad()
-    def relative_density(self, force, cap_pressure, stencil):
+    def relative_density(self, force, cap_pressure, stencil, *, rows=None):
         """T force-B^T cap_pressure/W with the pressure cancellation explicit."""
         amplitude = (stencil.dual*force).sum()
         remainder, info = self.base.spread(force-amplitude*stencil.mode, stencil.original)
-        cap = stencil.rows.lift(amplitude*C-cap_pressure)
+        rows = stencil.rows if rows is None else rows
+        cap = rows.lift(amplitude*C-cap_pressure)
         return tuple(f+amplitude*g+c for f, g, c in zip(remainder, stencil.gradient, cap)), info
 
     @torch.no_grad()
-    def relative_parts(self, force, cap_pressure, stencil):
+    def relative_parts(self, force, cap_pressure, stencil, *, rows=None):
         """Return remainder and analytic pressure amplitude, for exact BE addition."""
         amplitude = (stencil.dual*force).sum()
         remainder, info = self.base.spread(force-amplitude*stencil.mode, stencil.original)
-        cap = stencil.rows.lift(amplitude*C-cap_pressure)
+        rows = stencil.rows if rows is None else rows
+        cap = rows.lift(amplitude*C-cap_pressure)
         return tuple(f+c for f, c in zip(remainder, cap)), amplitude, info
 
     @torch.no_grad()

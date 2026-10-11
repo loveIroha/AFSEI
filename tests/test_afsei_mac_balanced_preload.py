@@ -103,6 +103,10 @@ def test_gpu_exact_pressure_superposition_agrees_with_full_original_be_equations
 
 def test_new_preload_recomputes_land_history_and_solves_paired_reactions(mac_case, tmp_path):
     d = precise_driver(mac_case)
+    # Independent static displacement/velocity/flux targets remain unchanged.
+    # Large pressure-force cancellation has a measured ~1e-12 residual floor.
+    d.config = replace(d.config, fsi=replace(d.config.fsi,
+        nonlinear=replace(d.config.fsi.nonlinear, atol=3e-11)))
     cfg = PreloadConfig(nominal_steps=4, minimum_step_mmhg=.005,
                        force_atol_dyn=1e-5, force_rtol=1e-10)
     result, history = solve(d, cfg)
