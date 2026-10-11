@@ -87,6 +87,15 @@ EP/GPB/Land 与运动心肌一同推进，不调用第十九阶段的冻结响�
 诊断正确排除开放 AV 通流；该入口不推进检查点，也不增加正式步耗时。
 结果、压力交接的后续要求与运行方法见 [压力和界面核对](docs/MAC_PRESSURE_INTERFACE_PHASE21.md)。
 
+第二十二阶段实现去除规定内膜压力及其切线、保留功配对基底反力的原 MAC 隐式交接验证分支。
+真实 128³ 预加载试算的位移/流速及均压未通过静态交接，候选状态不发布为正式检查点。
+源预加载几何和 Land 历史保持原数据；下一修复需建立与 MAC 离散一致的压力支承预加载平衡。
+验证入口、拒绝发布条件和实测结果见 [压力交接验证](docs/MAC_PRESSURE_HANDOFF_PHASE22.md)。
+
+```bash
+python scripts/check_afsei_mac_pressure_handoff.py --checkpoint results/phase10_mac128_source_preload_v1/checkpoint.npz --steps 3 --output results/my_pressure_handoff_check
+```
+
 ```bash
 python scripts/check_afsei_mac_pressure.py --checkpoint results/phase20_mac128_rcr_coupled_native_v2/checkpoint.npz --output results/my_mac_pressure_audit
 ```
