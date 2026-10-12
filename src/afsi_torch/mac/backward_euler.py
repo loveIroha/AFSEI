@@ -22,6 +22,7 @@ class BEFlowOptions:
     max_sweeps: int = 500
     check_every: int = 4
     helmholtz_backend: str = 'reference'
+    initial_sweeps: int = 0
 
     def __post_init__(self):
         if type(self.convection) is not bool or any(not isfinite(t) or t < 0 for t in
@@ -31,6 +32,10 @@ class BEFlowOptions:
             raise ValueError('positive Helmholtz iteration controls required')
         if self.helmholtz_backend not in ('reference', 'workspace', 'graph'):
             raise ValueError('invalid BE Helmholtz backend')
+        if (type(self.initial_sweeps) is not int or self.initial_sweeps<0
+                or self.initial_sweeps>self.max_sweeps
+                or self.initial_sweeps%self.check_every):
+            raise ValueError('initial BE sweeps must be a bounded multiple of check_every')
 
 
 class BackwardEulerFlow:
@@ -97,6 +102,12 @@ class BackwardEulerFlow:
         if self.workspace is not None:
             u, rhs = self.workspace.load(rhs)
         count = 0
+        # Optional scheduling change: perform the first Jacobi blocks before
+        # reading GPU norms. The SAME implicit matrix and true residual target
+        # are checked below; zero/small RHSs may do a few harmless extra sweeps.
+        while count < self.options.initial_sweeps:
+            u = self._smooth(u,rhs) if self.workspace is None else self.workspace.advance()
+            count += self.options.check_every
         # RHS is constant throughout this solve. Read its norms once and
         # batch all three component convergence checks into each transfer.
         numbers = self._metrics(u, rhs).tolist()

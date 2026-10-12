@@ -27,6 +27,8 @@ def main():
     p.add_argument('--cycles',type=int,help='fresh run only; default 2, period 800 ms')
     p.add_argument('--duration-ms',type=float,help='optional short interval, not complete-cycle validation')
     p.add_argument('--checkpoint-every',type=int,default=100)
+    p.add_argument('--reuse-step-tangent',action=argparse.BooleanOptionalAction,default=None,
+                   help='Reuse the mechanical tangent inside one step, with fresh-Newton fallback.')
     p.add_argument('--output',type=Path,required=True)
     a=p.parse_args()
     if not torch.cuda.is_available() or a.checkpoint_every<1: p.error('CUDA and positive checkpoint interval required')
@@ -45,6 +47,7 @@ def main():
         state=d.initialize_preload(a.preload)
         progress=dict(preload_source=str(a.preload),ep_steps=0,ode_substeps=0,
                       phase_seen={},max_mass_error_ml_s=0.,max_cumulative_mass_error_ml=0.)
+    if a.reuse_step_tangent is not None: d.reuse_step_tangent=a.reuse_step_tangent
     if state.tick>=d.end_tick: p.error('checkpoint has already reached the requested cycle end')
     target=d.end_tick
     if a.duration_ms is not None:

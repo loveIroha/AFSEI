@@ -19,12 +19,21 @@ def main():
     p.add_argument('--warmup',type=int,default=1)
     p.add_argument('--profile',action='store_true')
     p.add_argument('--mass-check-every',type=int,choices=(4,8,16))
+    p.add_argument('--tangent-chunk-size',type=int)
+    p.add_argument('--helmholtz-initial-sweeps',type=int)
+    p.add_argument('--reuse-step-tangent',action=argparse.BooleanOptionalAction,default=None)
     p.add_argument('--step-ticks',type=int,choices=(1,2),
                    help='Bound each step to one or two EP ticks (0.05 or 0.1 ms).')
     a=p.parse_args()
     if a.steps<1 or a.warmup<0: p.error('invalid step counts')
     a.output.mkdir(parents=True,exist_ok=False)
     d,state,progress=restart.load(a.input,cardiac=a.cardiac); d.profile=True
+    if a.reuse_step_tangent is not None: d.reuse_step_tangent=a.reuse_step_tangent
+    if a.tangent_chunk_size is not None:
+        if a.tangent_chunk_size<1: p.error('positive tangent chunk size required')
+        d.balanced_tangent_chunk_size=a.tangent_chunk_size; d._steppers.clear()
+    if a.helmholtz_initial_sweeps is not None:
+        d.helmholtz_initial_sweeps=a.helmholtz_initial_sweeps; d._steppers.clear()
     if a.mass_check_every is not None:
         d.mass_graph_check_every=a.mass_check_every
         d._steppers.clear()
@@ -55,6 +64,8 @@ def main():
         spacing_cm=d._fsi_stepper(d.maximum_ticks).grid.spacing,
         dt_s=d.config.fsi.time.dt if a.step_ticks is None else a.step_ticks*d.protocol.dt_ep_s,
         mass_graph_check_every=d.mass_graph_check_every,
+        tangent_chunk_size=d.balanced_tangent_chunk_size,
+        helmholtz_initial_sweeps=d.helmholtz_initial_sweeps,reuse_step_tangent=d.reuse_step_tangent,
         compact_cap_operators=d.compact_cap_operators,reached_time_s=state.fsi.time)
     (a.output/'report.json').write_text(json.dumps(report,indent=2)+'\n')
     if a.profile:

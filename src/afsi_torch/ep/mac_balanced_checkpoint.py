@@ -38,6 +38,9 @@ def save(path,driver,state,progress=None):
             balanced_execution=dict(level=driver.pressure_mode_level,
                 compact_cap_operators=driver.compact_cap_operators,
                 mass_graph_check_every=driver.mass_graph_check_every,
+                balanced_tangent_chunk_size=driver.balanced_tangent_chunk_size,
+                helmholtz_initial_sweeps=driver.helmholtz_initial_sweeps,
+                reuse_step_tangent=driver.reuse_step_tangent,
                 volume_transfer='integrated-p1-gradient-v1',
                 guard_cells=driver.pressure_guard_cells,one_way=driver.one_way,
                 cap_patch_width_cells=driver.cap_patch_width_cells,
@@ -87,6 +90,9 @@ def load(path,device='cuda',*,cardiac=False):
         # Execution settings preserve equations and all true-residual tolerances.
         driver.compact_cap_operators=settings.get('compact_cap_operators',True)
         driver.mass_graph_check_every=settings.get('mass_graph_check_every',16)
+        driver.balanced_tangent_chunk_size=settings.get('balanced_tangent_chunk_size',driver.balanced_tangent_chunk_size)
+        driver.helmholtz_initial_sweeps=settings.get('helmholtz_initial_sweeps',driver.helmholtz_initial_sweeps)
+        driver.reuse_step_tangent=settings.get('reuse_step_tangent',driver.reuse_step_tangent)
         if type(driver.compact_cap_operators) is not bool or type(driver.mass_graph_check_every) is not int or not 1<=driver.mass_graph_check_every<=16:
             raise ValueError('invalid balanced execution controls')
         driver.pressure_guard_cells = settings['guard_cells']; driver.one_way = settings['one_way']

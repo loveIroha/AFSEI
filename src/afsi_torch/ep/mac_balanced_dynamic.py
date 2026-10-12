@@ -94,6 +94,11 @@ class BalancedDynamicProblem(BalancedCapProblem):
 
     def residual(self, z):
         self.validate(z)
+        version=BEProblem._version(self.state.x)
+        if (self.driver.owner.response_optimizations and version is not None and version==self._last_state_version
+                and self.last_z is not None and torch.equal(z,self.last_z)):
+            self.cache_hits += 1
+            return self.last_residual.clone()
         d, rows = self.driver, self.rows
         y, x, _ = self.unpack(z); bp = self.cap_pressure(z)
         stencil = self.pressure_mode(x)
@@ -122,16 +127,24 @@ class BalancedDynamicProblem(BalancedCapProblem):
         if not torch.isfinite(residual).all(): raise FloatingPointError('nonfinite balanced dynamic residual')
         self.pressure_initial = p
         self.last_z, self.last_residual = z.clone(), residual.clone()
+        self._last_state_version=version
         self.last_cap_pressure = bp.clone()
         self.last_data = x, 0., self.load.volume(x), force, u, p, flow, nodal, density, spread, interpolation
         self.evaluations += 1
         return residual
 
-    def linearization(self, z):
+    def linearization(self, z, *, reuse_tangent=False):
         self.accepted(z)
         d, rows = self.driver, self.rows; x = self.unpack(z)[1]
-        if d.assembler is None: d.assembler = d.model.tangent_factory()
-        tangent = d.assembler.assemble(x, self.time); self.tangent_assemblies += 1
+        if d.assembler is None: d.assembler = d.model.tangent_factory(d.owner.balanced_tangent_chunk_size)
+        reusable=(reuse_tangent and self._tangent is not None
+            and self._tangent_open==self.last_open
+            and (x-self._tangent_x).abs().max().item()<.05*min(d.grid.spacing))
+        if not reusable:
+            self._tangent = d.assembler.assemble(x,self.time)
+            self._tangent_x=x.clone(); self._tangent_open=self.last_open
+            self.tangent_assemblies += 1
+        tangent=self._tangent
         self.linear_open = self.last_open
         stencil = self.current_stencil
         force,u = self.last_data[3],self.last_data[4]
@@ -139,14 +152,16 @@ class BalancedDynamicProblem(BalancedCapProblem):
         base_nodal,_ = d.transfer.base.interpolate(u,stencil.original)
         work = d.transfer.target_power(u,stencil.target)-(stencil.mode*base_nodal).sum()
         amplitude = (stencil.dual*force).sum()
-        middle = (self.state.x+x)/2
+        # The P1 boundary force derivative is affine in x. This evaluates
+        # (2*D F(midpoint)+D F(endpoint))/6 exactly with ONE boundary action.
+        derivative_geometry=(self.state.x+2*x)/3
         def action(v):
             self.jacobian_actions += 1
             dy = v[:self.mechanical_size].reshape_as(x)
             df = torch.sparse.mm(tangent, dy.reshape(-1,1)).reshape_as(x)
             dbp = self.cap_scale*v[self.mechanical_size:]
             df = df+rows.reaction(dbp)
-            dm = -(2*self.closed_load.action(middle,1.,dy)+self.closed_load.action(x,1.,dy))/6
+            dm = d.mode_derivative(derivative_geometry,dy)
             da = (dm-2*stencil.dual*(stencil.mode*dm).sum())/stencil.mode.square().sum()
             dalpha = (stencil.dual*df).sum()+(da*force).sum()
             d.transfer.reset_warm_start()
@@ -193,8 +208,12 @@ class BalancedEndpoint(IsovolumicEndpointStepper):
         if config.execution.mass_backend=='graph':
             config=replace(config,mass_solver=replace(config.mass_solver,
                 check_every=owner.mass_graph_check_every))
+        config=replace(config,flow=replace(config.flow,initial_sweeps=owner.helmholtz_initial_sweeps))
         super().__init__(owner, config)
         self.transfer = PressureModeTransfer(self, level=owner.pressure_mode_level)
+        from ..mac.execution import tensor_kernel
+        load=EndocardialAndCapPressure(self.model)
+        self.mode_derivative=tensor_kernel(lambda x,v: -.5*load.action(x,1.,v),self.model.mesh.X.device)
 
     @torch.no_grad()
     def physical_step(self, old, new_time, diagnostics):
@@ -212,9 +231,21 @@ class BalancedEndpoint(IsovolumicEndpointStepper):
         z = torch.cat((initial.flatten(),bp/problem.cap_scale))
         r0 = problem.residual(z); settings = self.config.nonlinear
         tolerance = max(settings.atol, settings.rtol*r0[:old.x.numel()].norm().item())
-        result = newton(problem.residual,z,validate=problem.validate,
-            linearization_factory=problem.linearization,preconditioner_factory=problem.preconditioner,
-            options=replace(settings,rtol=0.,atol=tolerance))
+        tangent_factory=lambda z: problem.linearization(z,reuse_tangent=self.owner.reuse_step_tangent)
+        fallback=False
+        options=replace(settings,rtol=0.,atol=tolerance)
+        try:
+            result = newton(problem.residual,z,validate=problem.validate,
+                linearization_factory=tangent_factory,preconditioner_factory=problem.preconditioner,
+                options=options)
+        except NonlinearFailure as exc:
+            if not self.owner.reuse_step_tangent: raise
+            fallback=True
+            result = newton(problem.residual,exc.result.x,validate=problem.validate,
+                linearization_factory=problem.linearization,preconditioner_factory=problem.preconditioner,
+                options=options)
+            result=replace(result,iterations=exc.result.iterations+result.iterations,
+                history=exc.result.history+[dict(h,iteration=exc.result.iterations+h['iteration']) for h in result.history])
         residual = problem.accepted(result.x)
         x, _, volume, force, u, p, flow, nodal, density, spread, interpolation = problem.last_data
         rows, bp = problem.rows, problem.last_cap_pressure
@@ -264,6 +295,9 @@ class BalancedEndpoint(IsovolumicEndpointStepper):
         else: core = cached[1]
         stats = pressure_statistics(p,core)
         info = dict(nonlinear=dict(iterations=result.iterations,residual_norm=residual.norm().item(),
+            solver='modified-newton-gmres' if self.owner.reuse_step_tangent else 'newton-gmres',
+            reuse_step_tangent=self.owner.reuse_step_tangent,tangent_refresh_fallback=fallback,
+            residual_cache_hits=problem.cache_hits,
             tolerance=tolerance,history=result.history,fluid_solves=self.flow.calls-before,
             jacobian_actions=problem.jacobian_actions,tangent_assemblies=problem.tangent_assemblies,
             preconditioner_rebuilt=problem.preconditioner_rebuilt,preconditioner_setup_seconds=problem.setup_seconds),
@@ -328,6 +362,10 @@ class BalancedAFSEIStepper(AFSEIStepper):
         self.port_geometry = None; self.one_way = True
         self.compact_cap_operators = True
         self.mass_graph_check_every = 16
+        self.balanced_tangent_chunk_size = 8192
+        self.helmholtz_initial_sweeps = (config.fsi.flow.check_every
+            if config.fsi.flow.max_sweeps>=config.fsi.flow.check_every else 0)
+        self.reuse_step_tangent = True
         self.valve_resistance_mmhg_s_per_ml = 0.
 
     def _fsi_stepper(self,step_ticks):
@@ -337,6 +375,12 @@ class BalancedAFSEIStepper(AFSEIStepper):
         return self._steppers[step_ticks]
 
     def validate_control(self,state):
+        if (type(self.reuse_step_tangent) is not bool
+                or type(self.balanced_tangent_chunk_size) is not int or self.balanced_tangent_chunk_size<1
+                or type(self.helmholtz_initial_sweeps) is not int or self.helmholtz_initial_sweeps<0
+                or self.helmholtz_initial_sweeps>self.config.fsi.flow.max_sweeps
+                or self.helmholtz_initial_sweeps%self.config.fsi.flow.check_every):
+            raise ValueError('invalid balanced execution controls')
         if not isinstance(state,BalancedState):
             raise ValueError('pressure-balanced state required')
         self._check_clock(state)
