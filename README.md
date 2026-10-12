@@ -20,6 +20,10 @@ EP 单域 PDE 使用 PyTorch GPU，GPB/Land 使用 CUDA；主动张力取代原�
 第二十九阶段合并重复 GPU 检查、直接写入流体工作区、就地累加基底载荷，并缓存静态几何规则。
 保持现有计算方法，同一短窗口降至约 1.909 s/步，比第二十八阶段耗时减少 12.12%。
 具体修改、数值对照及测量范围见 [同步与内存优化](docs/MAC_PERFORMANCE_PHASE29.md)。
+第三十阶段补齐质量求解初始化/真实残差 CUDA Graph、FFT/压力 RHS 工作区和 GMRES
+旋转融合及 Krylov 存储复用，保持原方程与收敛判据。同一短窗口观测约 1.888 s/步，
+较上轮低约 1.1%，样本不足以认定持续加速。验证与适用范围见
+[质量图、流体工作区与 GMRES](docs/MAC_PERFORMANCE_PHASE30.md)。
 贴体四面体路线保留为已有实验记录；其检查点与 MAC 不兼容。
 运行方法与实测性能见 [MAC 主线](docs/MAC_MAINLINE_PHASE9.md)。
 

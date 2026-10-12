@@ -12,7 +12,7 @@ from .execution import tensor_kernel
 
 
 class SpectralDirichletPressure:
-    def __init__(self,grid,*,device='cpu',dtype=torch.float64,options=None):
+    def __init__(self,grid,*,device='cpu',dtype=torch.float64,options=None,workspace=True):
         if dtype != torch.float64: raise ValueError('float64 spectral pressure required')
         self.grid = grid
         self.options = options or MGOptions()
@@ -31,6 +31,8 @@ class SpectralDirichletPressure:
             self.eigenvalue += (4*theta.sin().square()/h**2).reshape(shape)
         self._measure = tensor_kernel(lambda rhs,p: torch.stack((
             torch.linalg.vector_norm(rhs),torch.linalg.vector_norm(rhs-negative_laplacian(p,grid.spacing)))),device)
+        from .spectral_workspace import SpectralWorkspace
+        self.workspace=SpectralWorkspace(self) if workspace else None
 
     def forward(self,x,axis):
         n = x.shape[axis]
@@ -48,6 +50,8 @@ class SpectralDirichletPressure:
         return torch.fft.irfft(f,n=2*n,dim=axis).narrow(axis,0,n)
 
     def inverse_operator(self,rhs):
+        if self.workspace is not None:
+            return self.workspace.inverse(rhs).clone()
         value = rhs
         for axis in (2,1,0): value = self.forward(value,axis)
         value = value/self.eigenvalue

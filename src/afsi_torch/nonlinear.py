@@ -8,6 +8,7 @@ Dirichlet data are absolute unknown values, not displacement increments.
 from dataclasses import dataclass, field, replace
 from math import isfinite
 import torch
+from .krylov_workspace import KrylovWorkspace
 
 
 @dataclass(frozen=True)
@@ -117,7 +118,7 @@ def normalized_linear_action(action):
 
 
 @torch.no_grad()
-def gmres(action,rhs,*,precondition=None,options=None):
+def gmres(action,rhs,*,precondition=None,options=None,workspace=None):
     """Restarted right-preconditioned GMRES; residuals use the original A.
 
     Two orthogonalization passes. The small Hessenberg least-squares problem
@@ -125,6 +126,7 @@ def gmres(action,rhs,*,precondition=None,options=None):
     unless the actual residual meets tolerance. Starts from zero.
     """
     opt = GMRESOptions() if options is None else options
+    workspace=KrylovWorkspace() if workspace is None else workspace
     if rhs.dtype not in (torch.float32,torch.float64) or not rhs.numel():
         raise ValueError('nonempty floating rhs required')
     norm = lambda x: torch.linalg.vector_norm(x).item()
@@ -161,24 +163,27 @@ def gmres(action,rhs,*,precondition=None,options=None):
     while residual_norm > tol and count < opt.max_iterations:
         beta = torch.linalg.vector_norm(residual)
         width = min(opt.restart,opt.max_iterations-count,b.numel())
-        V = b.new_zeros((b.numel(),width+1))
-        Z = b.new_zeros((b.numel(),width))
-        H = b.new_zeros((width+1,width))
+        workspace.ensure(b,width); workspace.reset(width,beta)
+        V=workspace.V[:,:width+1]; Z=workspace.Z[:,:width]
+        H=workspace.H[:width+1,:width]
         # Givens rotations update only the small device-side Hessenberg system.
         # No coupled operator is called to obtain this residual estimate.
-        rotated = b.new_zeros((width+1,width)) if opt.check_policy=='estimated' else None
-        cosines,sines = b.new_zeros(width),b.new_zeros(width)
-        g = b.new_zeros(width+1); g[0] = beta
+        rotated = workspace.rotated[:width+1,:width] if opt.check_policy=='estimated' else None
+        cosines,sines=workspace.cosines[:width],workspace.sines[:width]
+        g=workspace.g[:width+1]
         V[:,0] = residual/beta
-        base = x.clone()
+        base=workspace.base; base.copy_(x)
         for j in range(width):
             Z[:,j] = solve_pre(V[:,j])
             w = apply(Z[:,j])
             original_norm = last_action_norm
             for _ in range(2):
-                coefficients = V[:,:j+1].T@w
+                coefficients=workspace.coefficients[:j+1]
+                torch.mv(V[:,:j+1].T,w,out=coefficients)
                 H[:j+1,j] += coefficients
-                w = w-V[:,:j+1]@coefficients
+                torch.mv(V[:,:j+1],coefficients,out=workspace.product)
+                torch.sub(w,workspace.product,out=workspace.work)
+                w=workspace.work
             H[j+1,j] = torch.linalg.vector_norm(w)
             breakdown = H[j+1,j].item() <= 100*torch.finfo(b.dtype).eps*max(original_norm,torch.finfo(b.dtype).tiny)
             if not breakdown:
@@ -186,20 +191,9 @@ def gmres(action,rhs,*,precondition=None,options=None):
             count += 1
             estimated_converged = False
             if rotated is not None:
-                column = H[:j+2,j].clone()
-                for k in range(j):
-                    a,c = column[k].clone(),column[k+1].clone()
-                    column[k] = cosines[k]*a+sines[k]*c
-                    column[k+1] = -sines[k]*a+cosines[k]*c
-                radius = torch.hypot(column[j],column[j+1])
-                denominator = radius.clamp_min(torch.finfo(b.dtype).tiny)
-                cosines[j],sines[j] = column[j]/denominator,column[j+1]/denominator
-                column[j] = radius; column[j+1] = 0
-                rotated[:j+2,j] = column
-                previous = g[j].clone()
-                g[j+1] = -sines[j]*previous; g[j] = cosines[j]*previous
+                estimate=workspace.rotate(H,rotated,cosines,sines,g,j)
                 estimated_checks += 1
-                estimated_converged = g[j+1].abs().item() <= tol
+                estimated_converged = estimate.item() <= tol
             scheduled = ((j+1)%opt.check_every==0 if rotated is None
                          else count%opt.true_check_interval==0)
             if breakdown or scheduled or estimated_converged or j+1 == width:
@@ -229,7 +223,7 @@ def gmres(action,rhs,*,precondition=None,options=None):
 
 @torch.no_grad()
 def newton(residual,x0,*,validate,fixed=None,values=None,preconditioner_factory=None,
-           linearization_factory=None,options=None):
+           linearization_factory=None,options=None,krylov_workspace=None):
     """Solve free residual=0 with exact JVP and Armijo residual-norm backtracking.
 
     A preconditioner is prepared once per Newton iteration and applied on the
@@ -244,6 +238,7 @@ def newton(residual,x0,*,validate,fixed=None,values=None,preconditioner_factory=
     last accepted state. Initial invalid input raises before any iteration.
     """
     opt = NewtonOptions() if options is None else options
+    krylov_workspace=KrylovWorkspace() if krylov_workspace is None else krylov_workspace
     if x0.dtype not in (torch.float32,torch.float64) or not x0.numel():
         raise ValueError('nonempty floating unknown required')
     _check(x0,x0,'initial unknown')
@@ -289,7 +284,8 @@ def newton(residual,x0,*,validate,fixed=None,values=None,preconditioner_factory=
                     forcing = min(forcing,.5*tol/current)
             linear = replace(opt.linear,rtol=forcing,
                              atol=max(opt.linear.atol,opt.linear_tolerance_fraction*tol))
-            step,linear_info = gmres(action,-r,precondition=precondition,options=linear)
+            step,linear_info = gmres(action,-r,precondition=precondition,options=linear,
+                                    workspace=krylov_workspace)
             linear_info.update(nonlinear_residual_norm=norm(r),nonlinear_tolerance=tol,
                                configured_atol=opt.linear.atol,effective_atol=linear.atol,
                                effective_rtol=linear.rtol,linear_forcing=opt.linear_forcing)

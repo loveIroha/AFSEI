@@ -55,11 +55,14 @@ class BackwardEulerFlow:
         self._metrics = self._measure
         self._residual_norms = self._measure_residuals
         self._project = self._projection
+        self.pressure_rhs=like.new_empty(grid.shape)
+        self._pressure_rhs=self._pressure_rhs_into
         if backend == 'fused':
             self._smooth = tensor_kernel(self._smooth, device)
             self._metrics = tensor_kernel(self._metrics, device)
             self._residual_norms = tensor_kernel(self._residual_norms, device)
             self._project = tensor_kernel(self._project, device)
+            self._pressure_rhs=tensor_kernel(self._pressure_rhs,device)
         self.calls = 0
         self.pressure_cycles = self.helmholtz_sweeps = 0
         self.workspace = None
@@ -92,6 +95,10 @@ class BackwardEulerFlow:
 
     def _projection(self, velocity, pressure):
         return tuple(u-self.dt/self.rho*g for u, g in zip(velocity, gradient(pressure, self.grid.spacing)))
+
+    def _pressure_rhs_into(self,velocity):
+        self.pressure_rhs.copy_(-self.rho/self.dt*divergence(velocity,self.grid.spacing))
+        return self.pressure_rhs
 
     @torch.no_grad()
     def solve_rhs(self, rhs, pressure_initial=None):
@@ -129,7 +136,7 @@ class BackwardEulerFlow:
             count += self.options.check_every
             residuals = self._residual_norms(u, rhs).tolist()
         # A=-DG; physical pressure, not the dt-scaled projection potential.
-        pressure, info = self.pressure_solver.solve(-self.rho/self.dt*divergence(u, self.grid.spacing), pressure_initial)
+        pressure, info = self.pressure_solver.solve(self._pressure_rhs(u), pressure_initial)
         velocity = self._project(u, pressure)
         self.calls += 1
         self.pressure_cycles += info['cycles']

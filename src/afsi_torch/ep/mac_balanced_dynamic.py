@@ -25,6 +25,7 @@ from ..mac.grid import divergence
 from ..mac.open_boundary import face_weights
 from ..nonlinear import newton, normalized_linear_action, NonlinearFailure
 from .mac_compact_cap import cap_reaction,add_cap_lift
+from ..krylov_workspace import KrylovWorkspace
 
 
 @dataclass(frozen=True)
@@ -220,6 +221,7 @@ class BalancedEndpoint(IsovolumicEndpointStepper):
         from ..mac.execution import tensor_kernel
         load=EndocardialAndCapPressure(self.model)
         self.mode_derivative=tensor_kernel(lambda x,v: -.5*load.action(x,1.,v),self.model.mesh.X.device)
+        self.krylov_workspace=KrylovWorkspace()
 
     @torch.no_grad()
     def physical_step(self, old, new_time, diagnostics):
@@ -243,13 +245,13 @@ class BalancedEndpoint(IsovolumicEndpointStepper):
         try:
             result = newton(problem.residual,z,validate=problem.validate,
                 linearization_factory=tangent_factory,preconditioner_factory=problem.preconditioner,
-                options=options)
+                options=options,krylov_workspace=self.krylov_workspace)
         except NonlinearFailure as exc:
             if not self.owner.reuse_step_tangent: raise
             fallback=True
             result = newton(problem.residual,exc.result.x,validate=problem.validate,
                 linearization_factory=problem.linearization,preconditioner_factory=problem.preconditioner,
-                options=options)
+                options=options,krylov_workspace=self.krylov_workspace)
             result=replace(result,iterations=exc.result.iterations+result.iterations,
                 history=exc.result.history+[dict(h,iteration=exc.result.iterations+h['iteration']) for h in result.history])
         residual = problem.accepted(result.x)
