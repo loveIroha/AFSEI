@@ -23,9 +23,20 @@ def _direction_into(r,diag,d,rz,active):
     rz.copy_(_direction(r,diag,d,rz,active))
 
 
+def _initial_metrics(rhs,residual,initial):
+    # One device reduction/host transfer instead of three serial barriers.
+    finite=torch.isfinite(rhs).all() & torch.isfinite(initial).all()
+    return torch.stack((finite.to(rhs.dtype),torch.linalg.vector_norm(rhs),
+                        torch.linalg.vector_norm(residual)))
+
+
 class GraphMassSolver(MassSolver):
     def __init__(self,mass,diagonal,options=None):
         super().__init__(mass,diagonal,options)
+        # The consistent mass operator is immutable. Check it once before
+        # using the exact M*0=0 shortcut, so NaN/Inf entries cannot be hidden.
+        if not torch.isfinite(mass.values()).all():
+            raise ValueError('finite constant mass operator required')
         if not 1<=self.options.check_every<=16 or self.options.recompute_every<1:
             raise ValueError('graph PCG requires check_every in [1,16] and positive recompute_every')
         self.rz=diagonal.new_ones(())
@@ -36,6 +47,7 @@ class GraphMassSolver(MassSolver):
         # separate tiny copy kernels on every iteration in the captured block.
         self.advance_into=tensor_kernel(_advance_into,diagonal.device)
         self.direction_into=tensor_kernel(_direction_into,diagonal.device)
+        self.initial_metrics=tensor_kernel(_initial_metrics,diagonal.device)
         self.graphs={}
         if diagonal.is_cuda:
             self._capture()
@@ -74,20 +86,25 @@ class GraphMassSolver(MassSolver):
         for v in (rhs,) if initial is None else (rhs,initial):
             if v.shape!=self.x.shape or v.dtype!=self.x.dtype or v.device!=self.x.device:
                 raise ValueError('mass solve shape, dtype or device mismatch')
-        finite=torch.isfinite(rhs).all()
-        if initial is not None:
-            finite=finite & torch.isfinite(initial).all()
-        if not finite:
-            raise ValueError('finite mass RHS and initial guess required')
-        rhs_norm=torch.linalg.vector_norm(rhs).item()
-        tolerance=max(opt.atol,opt.rtol*rhs_norm)
-        self.tol.fill_(tolerance)
-        self.x.zero_() if initial is None else self.x.copy_(initial)
         def true_residual():
             self.action(self.x,self.Ad)
             torch.sub(rhs,self.Ad,out=self.r)
             return torch.linalg.vector_norm(self.r).item()
-        true_norm=true_residual()
+        if initial is None:
+            self.x.zero_()
+            # M*0 is exactly zero; skip the redundant sparse multiplication.
+            self.r.copy_(rhs)
+        else:
+            self.x.copy_(initial)
+            self.action(self.x,self.Ad)
+            torch.sub(rhs,self.Ad,out=self.r)
+        finite,rhs_norm,true_norm=self.initial_metrics(rhs,self.r,self.x).tolist()
+        if not finite:
+            raise ValueError('finite mass RHS and initial guess required')
+        if not isfinite(rhs_norm) or not isfinite(true_norm):
+            raise RuntimeError('nonfinite initial PCG residual')
+        tolerance=max(opt.atol,opt.rtol*rhs_norm)
+        self.tol.fill_(tolerance)
         if true_norm<=tolerance:
             return self.x.clone(),SolveInfo(0,true_norm,rhs_norm,tolerance)
         self.rz.copy_(self.restart(self.r,self.diagonal,self.d))

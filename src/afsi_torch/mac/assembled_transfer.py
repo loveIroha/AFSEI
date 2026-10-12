@@ -194,7 +194,12 @@ class AssembledP1Transfer(AdaptiveP1Transfer):
 
     @torch.no_grad()
     def spread(self,nodal_force,stencil):
-        self._nodal(nodal_force)
+        # solve_mass checks the identical nodal input, including finiteness.
+        # Do not scan/read it once here and a second time in the mass solver.
+        g=self.geometry
+        if (nodal_force.shape!=(g.node_count,3) or nodal_force.device!=g.weights.device
+                or nodal_force.dtype!=g.weights.dtype):
+            raise ValueError('invalid FE nodal field')
         coefficient,info = self.solve_mass(nodal_force,self._force_coefficient if self.warm_start else None)
         if self.warm_start: self._force_coefficient = coefficient
         density = tuple((torch.sparse.mm(B,coefficient[:,c:c+1])/self.grid.volume).reshape(self.grid.face_shape(c))
@@ -202,9 +207,10 @@ class AssembledP1Transfer(AdaptiveP1Transfer):
         return density,info
 
     @torch.no_grad()
-    def interpolate(self,velocity,stencil):
+    def interpolate(self,velocity,stencil,*,check_finite=True):
         self.grid.check_velocity(velocity)
-        if any(u.device!=self.geometry.weights.device or u.dtype!=self.geometry.weights.dtype for u in velocity) or not self._finite_kernel(*velocity):
+        if (any(u.device!=self.geometry.weights.device or u.dtype!=self.geometry.weights.dtype for u in velocity)
+                or (check_finite and not self._finite_kernel(*velocity))):
             raise ValueError('invalid MAC interpolation field')
         rhs = torch.cat([torch.sparse.mm(B,u.reshape(-1,1)) for B,u in zip(stencil.gather,velocity)],1)
         result,info = self.solve_mass(rhs,self._velocity_coefficient if self.warm_start else None)

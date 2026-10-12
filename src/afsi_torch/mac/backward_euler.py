@@ -101,6 +101,9 @@ class BackwardEulerFlow:
         u = rhs
         if self.workspace is not None:
             u, rhs = self.workspace.load(rhs)
+        return self._solve_loaded(u,rhs,pressure_initial)
+
+    def _solve_loaded(self,u,rhs,pressure_initial=None):
         count = 0
         # Optional scheduling change: perform the first Jacobi blocks before
         # reading GPU norms. The SAME implicit matrix and true residual target
@@ -136,9 +139,20 @@ class BackwardEulerFlow:
             helmholtz_backend=('graph' if self.workspace is not None and self.workspace.graph is not None
                 else 'workspace' if self.workspace is not None else 'reference'))
 
+    @torch.no_grad()
     def response(self, density):
         # Zero advection/time lift, used only in an assembled Jacobian action.
+        if self.workspace is not None:
+            self.grid.check_velocity(density)
+            u,rhs=self.workspace.load_forcing(density)
+            return self._solve_loaded(u,rhs)[0]
         return self.solve_rhs(tuple(self.dt/self.rho*f for f in density))[0]
 
+    @torch.no_grad()
     def advance(self, departure_velocity, density, pressure_initial=None):
+        if self.workspace is not None:
+            self.grid.check_velocity(density)
+            self.grid.check_velocity(departure_velocity)
+            u,rhs=self.workspace.load_forcing(density,departure_velocity)
+            return self._solve_loaded(u,rhs,pressure_initial)
         return self.solve_rhs(tuple(a+self.dt/self.rho*f for a, f in zip(departure_velocity, density)), pressure_initial)

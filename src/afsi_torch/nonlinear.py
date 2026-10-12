@@ -88,11 +88,15 @@ class NonlinearFailure(RuntimeError):
 
 
 def _check(value,reference,name):
+    _check_metadata(value,reference,name)
+    if not torch.isfinite(value).all():
+        raise FloatingPointError(f'nonfinite {name}')
+
+
+def _check_metadata(value,reference,name):
     if (not isinstance(value,torch.Tensor) or value.shape != reference.shape or
         value.dtype != reference.dtype or value.device != reference.device):
         raise ValueError(f'{name} must match unknown shape, dtype and device')
-    if not torch.isfinite(value).all():
-        raise FloatingPointError(f'nonfinite {name}')
 
 
 def normalized_linear_action(action):
@@ -123,16 +127,23 @@ def gmres(action,rhs,*,precondition=None,options=None):
     opt = GMRESOptions() if options is None else options
     if rhs.dtype not in (torch.float32,torch.float64) or not rhs.numel():
         raise ValueError('nonempty floating rhs required')
-    _check(rhs,rhs,'rhs')
     norm = lambda x: torch.linalg.vector_norm(x).item()
-    tol = max(opt.atol,opt.rtol*norm(rhs))
+    _check_metadata(rhs,rhs,'rhs')
+    rhs_norm=norm(rhs)
+    if not isfinite(rhs_norm): raise FloatingPointError('nonfinite rhs norm')
+    tol = max(opt.atol,opt.rtol*rhs_norm)
     shape = rhs.shape
     actions = true_checks = estimated_checks = residual_restarts = 0
+    last_action_norm=0.
     def apply(v):
-        nonlocal actions
+        nonlocal actions,last_action_norm
         actions += 1
         out = action(v.reshape(shape))
-        _check(out,rhs,'operator action')
+        _check_metadata(out,rhs,'operator action')
+        # Arnoldi needs this norm anyway. Its finite result also validates the
+        # complete action, avoiding an independent isfinite host barrier.
+        last_action_norm=norm(out)
+        if not isfinite(last_action_norm): raise FloatingPointError('nonfinite operator action norm')
         return out.reshape(-1)
     def solve_pre(v):
         out = v.reshape(shape) if precondition is None else precondition(v.reshape(shape))
@@ -141,12 +152,13 @@ def gmres(action,rhs,*,precondition=None,options=None):
     x = torch.zeros_like(rhs).reshape(-1)
     b = rhs.reshape(-1)
     residual = b-apply(x)
+    residual_norm=norm(residual)
     count = 0
     def info():
-        return dict(iterations=count,residual_norm=norm(residual),tolerance=tol,
+        return dict(iterations=count,residual_norm=residual_norm,tolerance=tol,
                     operator_actions=actions,true_residual_checks=true_checks,
                     estimated_residual_checks=estimated_checks,residual_restarts=residual_restarts)
-    while norm(residual) > tol and count < opt.max_iterations:
+    while residual_norm > tol and count < opt.max_iterations:
         beta = torch.linalg.vector_norm(residual)
         width = min(opt.restart,opt.max_iterations-count,b.numel())
         V = b.new_zeros((b.numel(),width+1))
@@ -162,7 +174,7 @@ def gmres(action,rhs,*,precondition=None,options=None):
         for j in range(width):
             Z[:,j] = solve_pre(V[:,j])
             w = apply(Z[:,j])
-            original_norm = norm(w)
+            original_norm = last_action_norm
             for _ in range(2):
                 coefficients = V[:,:j+1].T@w
                 H[:j+1,j] += coefficients
@@ -199,8 +211,9 @@ def gmres(action,rhs,*,precondition=None,options=None):
                 y = torch.linalg.solve_triangular(R,(Q.T@target)[:,None],upper=True)[:,0]
                 x = base+Z[:,:j+1]@y
                 residual = b-apply(x)
+                residual_norm=norm(residual)
                 true_checks += 1
-                if norm(residual) <= tol:
+                if residual_norm <= tol:
                     return x.reshape(shape),info()
                 if breakdown:
                     raise RuntimeError('GMRES breakdown before true-residual convergence')
@@ -209,8 +222,8 @@ def gmres(action,rhs,*,precondition=None,options=None):
                     # A rejected estimate restarts from its measured residual.
                     residual_restarts += 1
                     break
-    if norm(residual) > tol:
-        raise RuntimeError(f'GMRES failed: true residual {norm(residual):.6g} > {tol:.6g} after {count} iterations')
+    if residual_norm > tol:
+        raise RuntimeError(f'GMRES failed: true residual {residual_norm:.6g} > {tol:.6g} after {count} iterations')
     return x.reshape(shape),info()
 
 

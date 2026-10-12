@@ -16,6 +16,7 @@ from .windkessel import MMHG_TO_DYN_CM2 as C
 from ..mac.grid import divergence
 from ..mac.open_boundary import gradient, negative_laplacian
 from ..mac.execution import tensor_kernel
+from .mac_compact_cap import add_cap_lift
 
 
 @dataclass(frozen=True)
@@ -48,6 +49,16 @@ class PressureModeTransfer:
         if isinstance(self.base, PressureModeTransfer):
             raise ValueError('pressure-mode transfer cannot be wrapped twice')
         self.endpoint, self.level = endpoint, level
+        self.pressure_load=MACEndocardialPressure(endpoint.model)
+        self.endo_nodes=torch.unique(endpoint.model.endo_faces)
+        self.audit=None
+        like=endpoint.model.mesh.X
+        self.cell_coordinates=tuple(endpoint.grid.origin[a]+(.5+torch.arange(
+            endpoint.grid.shape[a],device=like.device,dtype=like.dtype))*endpoint.grid.spacing[a]
+            for a in range(3))
+        self.face_coordinates=tuple(tuple(endpoint.grid.face_origin(c)[a]+endpoint.grid.spacing[a]*
+            torch.arange(endpoint.grid.face_shape(c)[a],device=like.device,dtype=like.dtype)
+            for a in range(3)) for c in range(3))
         # target is zero on box faces: its compact q and cap stencils have
         # verified boundary margins. Thus W reduces exactly to cell volume.
         self.target_power=tensor_kernel(lambda u,b: endpoint.grid.volume*sum(
@@ -63,11 +74,16 @@ class PressureModeTransfer:
         d = self.endpoint
         original = self.base.prepare(x)
         rows = closed_rows(d, x)
-        t = -MACEndocardialPressure(d.model).force(x, 1.)
-        if not torch.isfinite(t).all() or t.square().sum() <= 0:
+        t = -self.pressure_load.force(x, 1.)
+        square=t.square().sum()
+        if not (torch.isfinite(t).all() & (square>0)):
             raise ValueError('finite nonzero source pressure mode required')
-        dual = t/t.square().sum()
-        audit = ClosedCavityMassAudit(x, d.model.endo_faces, d.grid)
+        dual = t/square
+        if self.audit is None:
+            self.audit=ClosedCavityMassAudit(x,d.model.endo_faces,d.grid,rim=self.pressure_load.rim)
+        else:
+            self.audit.validate_geometry(x)
+        audit=self.audit
         wall, cap = audit.triangles(x)
         fw = surface_pressure_density(audit, wall, 1., level=self.level, kernel='bs4-bs3')
         fc = surface_pressure_density(audit, cap, 1., level=self.level+2, kernel='bs4-bs3')
@@ -80,19 +96,18 @@ class PressureModeTransfer:
         # so velocity-Neumann / pressure-Dirichlet boundary commutators cannot
         # enter the hydrostatic mode. This is explicit and reported, never a
         # fitted pressure shift/normalization or a reference-force subtraction.
-        bounds = x[torch.unique(d.model.endo_faces)]
+        bounds = x[self.endo_nodes]
         low, high = bounds.amin(0), bounds.amax(0)
         support = torch.ones_like(q, dtype=torch.bool)
         for axis in range(3):
-            coord = (d.grid.origin[axis]+(.5+torch.arange(d.grid.shape[axis],
-                     device=x.device, dtype=x.dtype))*d.grid.spacing[axis])
+            coord = self.cell_coordinates[axis]
             shape = [1]*3; shape[axis] = len(coord)
             keep = (coord >= low[axis]-2*d.grid.spacing[axis]) & (coord <= high[axis]+2*d.grid.spacing[axis])
             support &= keep.reshape(shape)
-        removed = q.masked_fill(support, 0).abs().max().item()
+        removed = q.masked_fill(support, 0).abs().max()
         q = q.masked_fill(~support, 0)
-        if any(q.select(axis, side).abs().max() > 0
-               for axis in range(3) for side in (0, 1, q.shape[axis]-2, q.shape[axis]-1)):
+        if torch.stack([q.select(axis,side).abs().max()
+               for axis in range(3) for side in (0,1,q.shape[axis]-2,q.shape[axis]-1)]).max()>0:
             raise ValueError('compact hydrostatic pressure reaches outer boundary; enlarge MAC box')
         # phi=H_pressure*q; compact support gives G phi=H_velocity G q.
         phi = q+d.flow.dt*d.flow.mu/d.flow.rho*negative_laplacian(q, d.grid.spacing)
@@ -108,19 +123,21 @@ class PressureModeTransfer:
         center = x.mean(0)
         for c, b in enumerate(correction):
             for axis,sign,out in (((c+2)%3,1,(c+1)%3),((c+1)%3,-1,(c+2)%3)):
-                coordinate=(d.grid.face_origin(c)[axis]+d.grid.spacing[axis]*
-                    torch.arange(b.shape[axis],device=x.device,dtype=x.dtype)-center[axis])
+                coordinate=self.face_coordinates[c][axis]-center[axis]
                 line=b.sum(tuple(j for j in range(3) if j!=axis))
                 torque[out] += sign*d.grid.volume*(coordinate*line).sum()
         residual = weighted_norm(d.grid, tuple(a-b for a, b in zip(density, gradient(q, d.grid.spacing))))
+        # Diagnostics share one host read instead of six sequential transfers.
+        numbers=torch.cat((torch.stack((residual,weighted_norm(d.grid,correction),
+            net.norm(),torque.norm(),removed)),net,torque)).tolist()
         if x.is_cuda: torch.cuda.synchronize(x.device)
         report = dict(setup_seconds=perf_counter()-started, surface_level=self.level,
             hydrostatic_hodge_residual=info,
-            discarded_unit_surface_non_gradient_weighted_l2=residual.item(),
-            correction_weighted_l2=weighted_norm(d.grid, correction).item(),
-            correction_net_force_dyn=net.tolist(), correction_torque_dyn_cm=torque.tolist(),
-            correction_net_force_norm_dyn=net.norm().item(), correction_torque_norm_dyn_cm=torque.norm().item(),
-            removed_quadrature_tail_max_mmhg=removed/C,
+            discarded_unit_surface_non_gradient_weighted_l2=numbers[0],
+            correction_weighted_l2=numbers[1],
+            correction_net_force_dyn=numbers[5:8], correction_torque_dyn_cm=numbers[8:11],
+            correction_net_force_norm_dyn=numbers[2], correction_torque_norm_dyn_cm=numbers[3],
+            removed_quadrature_tail_max_mmhg=numbers[4]/C,
             compact_pressure_support='endo bounds plus two MAC cells',
             hydrostatic_response_evaluated_by_exact_BE_superposition=True,
             solid_force_or_preload_residual_used_to_build_mode=False,
@@ -151,17 +168,21 @@ class PressureModeTransfer:
         return tuple(f+amplitude*g+c for f, g, c in zip(remainder, stencil.gradient, cap)), info
 
     @torch.no_grad()
-    def relative_parts(self, force, cap_pressure, stencil, *, rows=None):
+    def relative_parts(self, force, cap_pressure, stencil, *, rows=None,check_finite=True):
         """Return remainder and analytic pressure amplitude, for exact BE addition."""
         amplitude = (stencil.dual*force).sum()
         remainder, info = self.base.spread(force-amplitude*stencil.mode, stencil.original)
         rows = stencil.rows if rows is None else rows
-        cap = rows.lift(amplitude*C-cap_pressure)
-        return tuple(f+c for f, c in zip(remainder, cap)), amplitude, info
+        remainder=add_cap_lift(rows,amplitude*C-cap_pressure,remainder,check_finite=check_finite)
+        return remainder, amplitude, info
 
     @torch.no_grad()
-    def interpolate(self, velocity, stencil):
-        nodal, info = self.base.interpolate(velocity, stencil.original)
+    def interpolate(self, velocity, stencil,*,check_finite=True):
+        from ..mac.assembled_transfer import AssembledP1Transfer
+        if isinstance(self.base,AssembledP1Transfer):
+            nodal,info=self.base.interpolate(velocity,stencil.original,check_finite=check_finite)
+        else:
+            nodal,info=self.base.interpolate(velocity,stencil.original)
         power = self.target_power(velocity,stencil.target)
         power -= (stencil.mode*nodal).sum()
         return nodal+stencil.dual*power, info

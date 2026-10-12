@@ -53,17 +53,27 @@ def rt0_trace(grid,velocity,points):
 
 
 class ClosedCavityMassAudit:
-    def __init__(self,reference_x,endocardial_faces,grid,*,chunk_points=32768):
+    def __init__(self,reference_x,endocardial_faces,grid,*,chunk_points=32768,rim=None):
         if (reference_x.ndim!=2 or reference_x.shape[1]!=3 or reference_x.dtype!=torch.float64
                 or not torch.isfinite(reference_x).all() or type(chunk_points) is not int
                 or chunk_points<16384):
             raise ValueError('finite float64 nodal geometry and chunk_points>=16384 required')
         self.X,self.faces,self.grid=reference_x,endocardial_faces,grid
-        self.rim=cavity_rim(endocardial_faces)
+        self.rim=cavity_rim(endocardial_faces) if rim is None else rim
+        if (self.rim.ndim!=2 or self.rim.shape[1]!=2 or self.rim.dtype!=torch.int64
+                or self.rim.device!=reference_x.device):
+            raise ValueError('matching oriented cavity rim required')
         self.chunk_points=chunk_points
         self.rules={}
         if cavity_volume(reference_x,self.faces,self.rim)<=0:
             raise ValueError('positive blood-outward closed volume required')
+
+    def validate_geometry(self,nodal):
+        if nodal.shape!=self.X.shape or nodal.dtype!=self.X.dtype or nodal.device!=self.X.device:
+            raise ValueError('matching closed cavity geometry required')
+        valid=torch.isfinite(nodal).all() & (cavity_volume(nodal,self.faces,self.rim)>0)
+        if not valid:
+            raise ValueError('finite positive blood-outward closed geometry required')
 
     def triangles(self,nodal):
         # Source endocardial normals point into blood; reverse them. The

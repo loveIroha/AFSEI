@@ -24,6 +24,7 @@ from ..mac.paper_coupling import BEProblem, PaperState
 from ..mac.grid import divergence
 from ..mac.open_boundary import face_weights
 from ..nonlinear import newton, normalized_linear_action, NonlinearFailure
+from .mac_compact_cap import cap_reaction,add_cap_lift
 
 
 @dataclass(frozen=True)
@@ -86,10 +87,10 @@ class BalancedDynamicProblem(BalancedCapProblem):
     def sensitivity(self, force, pressure=None):
         d = self.driver; pressure = torch.zeros_like(self.rows.area) if pressure is None else pressure
         d.transfer.reset_warm_start()
-        remainder, _, _ = d.transfer.relative_parts(force+self.rows.reaction(pressure),
-            pressure, self.stencil, rows=self.rows)
+        remainder, _, _ = d.transfer.relative_parts(force+cap_reaction(self.rows,pressure,check_finite=False),
+            pressure, self.stencil, rows=self.rows,check_finite=False)
         u = d.flow.response(remainder)
-        nodal, _ = d.transfer.interpolate(u, self.stencil)
+        nodal, _ = d.transfer.interpolate(u, self.stencil,check_finite=False)
         return u, nodal
 
     def residual(self, z):
@@ -103,14 +104,16 @@ class BalancedDynamicProblem(BalancedCapProblem):
         y, x, _ = self.unpack(z); bp = self.cap_pressure(z)
         stencil = self.pressure_mode(x)
         self.current_stencil = stencil
-        force = d.solid.force(x, self.time)+rows.reaction(bp)
+        # The mass RHS and BE/pressure true residuals validate all resulting
+        # fields. Avoid intermediate CPU barriers on cap scalars and velocity.
+        force = d.solid.force(x, self.time)+cap_reaction(rows,bp,check_finite=False)
         d.transfer.reset_warm_start()
-        remainder, amplitude, spread = d.transfer.relative_parts(force, bp, stencil, rows=rows)
+        remainder, amplitude, spread = d.transfer.relative_parts(force, bp, stencil, rows=rows,check_finite=False)
         known = amplitude*stencil.potential
         u, p, flow = d.flow.advance(self.departure, remainder, self.pressure_initial-known)
         p = p+known
         density = tuple(f+amplitude*g for f,g in zip(remainder,stencil.gradient))
-        nodal, interpolation = d.transfer.interpolate(u, stencil)
+        nodal, interpolation = d.transfer.interpolate(u, stencil,check_finite=False)
         rates = rows.flow(u)-rows.material_flow(nodal)
         lower = rates/rows.area
         self.last_open = False; self.last_circuit = None; self.last_gap = None
@@ -118,7 +121,7 @@ class BalancedDynamicProblem(BalancedCapProblem):
             circuit = flow_driven_trial(self.control.arterial_pc_mmhg, rates[-1], d.flow.dt,
                                        self.control.windkessel)
             gap = circuit.outlet_mmhg+d.owner.valve_resistance_mmhg_s_per_ml*rates[-1]-bp[-1]/C
-            self.last_open = not d.owner.one_way or lower[-1].item() > gap.item()
+            self.last_open = not d.owner.one_way or (lower[-1]>gap).item()
             lower[-1] = gap if self.last_open else lower[-1]
             self.last_circuit, self.last_gap = circuit, gap
         elif self.control.mode == 'filling':
@@ -149,7 +152,10 @@ class BalancedDynamicProblem(BalancedCapProblem):
         stencil = self.current_stencil
         force,u = self.last_data[3],self.last_data[4]
         d.transfer.reset_warm_start()
-        base_nodal,_ = d.transfer.base.interpolate(u,stencil.original)
+        from ..mac.assembled_transfer import AssembledP1Transfer
+        base_nodal,_ = (d.transfer.base.interpolate(u,stencil.original,check_finite=False)
+            if isinstance(d.transfer.base,AssembledP1Transfer)
+            else d.transfer.base.interpolate(u,stencil.original))
         work = d.transfer.target_power(u,stencil.target)-(stencil.mode*base_nodal).sum()
         amplitude = (stencil.dual*force).sum()
         # The P1 boundary force derivative is affine in x. This evaluates
@@ -160,16 +166,16 @@ class BalancedDynamicProblem(BalancedCapProblem):
             dy = v[:self.mechanical_size].reshape_as(x)
             df = torch.sparse.mm(tangent, dy.reshape(-1,1)).reshape_as(x)
             dbp = self.cap_scale*v[self.mechanical_size:]
-            df = df+rows.reaction(dbp)
+            df = df+cap_reaction(rows,dbp,check_finite=False)
             dm = d.mode_derivative(derivative_geometry,dy)
             da = (dm-2*stencil.dual*(stencil.mode*dm).sum())/stencil.mode.square().sum()
             dalpha = (stencil.dual*df).sum()+(da*force).sum()
             d.transfer.reset_warm_start()
             remainder,_ = d.transfer.base.spread(
                 df-dalpha*stencil.mode-amplitude*dm,stencil.original)
-            cap = rows.lift(dalpha*C-dbp)
-            du = d.flow.response(tuple(a+b for a,b in zip(remainder,cap)))
-            dw,_ = d.transfer.interpolate(du,stencil)
+            density=add_cap_lift(rows,dalpha*C-dbp,remainder,check_finite=False)
+            du = d.flow.response(density)
+            dw,_ = d.transfer.interpolate(du,stencil,check_finite=False)
             dw = dw+da*work-stencil.dual*(dm*base_nodal).sum()
             dq = rows.flow(du)-rows.material_flow(dw)
             lower = dq/rows.area

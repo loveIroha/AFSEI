@@ -46,10 +46,29 @@ class CompactCapRows:
             u.reshape(-1).index_copy_(0,faces,value)
         return result
 
-    def _check_pressure(self,pressure):
+    def _check_pressure(self,pressure,*,check_finite=True):
         if (pressure.shape!=self.area.shape or pressure.dtype!=self.area.dtype
-                or pressure.device!=self.area.device or not torch.isfinite(pressure).all()):
+                or pressure.device!=self.area.device
+                or (check_finite and not torch.isfinite(pressure).all())):
             raise ValueError('finite matching compact cap pressures required')
+
+    def add_lift_into(self,pressure,density,*,check_finite=True):
+        """Add the same lift to caller-owned density without three zero grids.
+
+        Internal coupled callers may defer finite checks to the following mass
+        or BE solve. Public calls check pressure by default, including NaNs on
+        empty component supports. Metadata checks always remain enabled.
+        """
+        self._check_pressure(pressure,check_finite=check_finite)
+        grid=self.prepared.cap.grid
+        grid.check_velocity(density)
+        if any(u.dtype!=pressure.dtype or u.device!=pressure.device or not u.is_contiguous()
+               for u in density):
+            raise ValueError('owned contiguous matching cap density required')
+        for u,(faces,matrix,transpose) in zip(density,self.matrices):
+            value=torch.sparse.mm(transpose,pressure[:,None]).flatten()/grid.volume
+            u.reshape(-1).index_add_(0,faces,value)
+        return density
 
     def material_flow(self,velocity):
         if (velocity.shape!=self.prepared.cap.X.shape or velocity.dtype!=self.area.dtype
@@ -57,11 +76,23 @@ class CompactCapRows:
             raise ValueError('matching cap material velocity required')
         return self.material_matrix@velocity[self.nodes].flatten()
 
-    def reaction(self,pressure):
-        self._check_pressure(pressure)
+    def reaction(self,pressure,*,check_finite=True):
+        self._check_pressure(pressure,check_finite=check_finite)
         result=torch.zeros_like(self.prepared.cap.X)
         result.index_copy_(0,self.nodes,(self.material_matrix.T@pressure).reshape(-1,3))
         return result
+
+
+def cap_reaction(rows,pressure,*,check_finite=True):
+    if isinstance(rows,CompactCapRows):
+        return rows.reaction(pressure,check_finite=check_finite)
+    return rows.reaction(pressure)
+
+
+def add_cap_lift(rows,pressure,density,*,check_finite=True):
+    if isinstance(rows,CompactCapRows):
+        return rows.add_lift_into(pressure,density,check_finite=check_finite)
+    return tuple(a+b for a,b in zip(density,rows.lift(pressure)))
 
 
 def compact_rows(endpoint,rows):

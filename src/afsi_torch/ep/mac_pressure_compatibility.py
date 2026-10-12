@@ -5,6 +5,7 @@ paired basal reactions, or a new preload/checkpoint. The composite kernel is
 an isolated candidate: production FETransfer and cap operators are unchanged.
 """
 from math import isfinite
+from functools import lru_cache
 from time import perf_counter
 import torch
 from ..ib import peskin4
@@ -28,16 +29,8 @@ def bs4(r):
     return torch.where(a < 1., 2/3-a.square()+.5*a**3, (2-a).clamp_min(0)**3/6)
 
 
-def surface_stencil(grid, points, *, kernel):
-    if kernel not in ('peskin4', 'bs4-bs3'):
-        raise ValueError('unknown diagnostic surface kernel')
-    if (points.ndim != 2 or points.shape[1] != 3 or points.dtype != torch.float64
-            or not torch.isfinite(points).all()):
-        raise ValueError('finite float64 surface points required')
+def _surface_stencil_values(grid,points,kernel):
     h = points.new_tensor(grid.spacing)
-    box = (points-points.new_tensor(grid.origin))/h
-    if (box < 2).any() or (box >= box.new_tensor(grid.shape)-2).any():
-        raise ValueError('surface kernel support reaches the outer box')
     result = []
     for c in range(3):
         scaled = (points-points.new_tensor(grid.face_origin(c)))/h
@@ -59,6 +52,31 @@ def surface_stencil(grid, points, *, kernel):
     return result
 
 
+@lru_cache(maxsize=32)
+def _surface_kernel(grid,kernel,device_type):
+    function=lambda points:_surface_stencil_values(grid,points,kernel)
+    if device_type=='cuda':
+        # Chunk lengths vary; share one compiled graph across those lengths.
+        return torch.compile(function,fullgraph=True,dynamic=True,
+                             options={'triton.cudagraphs':False})
+    return function
+
+
+def surface_stencil(grid,points,*,kernel):
+    if kernel not in ('peskin4','bs4-bs3'):
+        raise ValueError('unknown diagnostic surface kernel')
+    if points.ndim!=2 or points.shape[1]!=3 or points.dtype!=torch.float64:
+        raise ValueError('finite float64 surface points required')
+    box=(points-points.new_tensor(grid.origin))/points.new_tensor(grid.spacing)
+    finite,inside=torch.stack((torch.isfinite(points).all(),
+        (box>=2).all() & (box<box.new_tensor(grid.shape)-2).all())).tolist()
+    if not finite:
+        raise ValueError('finite float64 surface points required')
+    if not inside:
+        raise ValueError('surface kernel support reaches the outer box')
+    return _surface_kernel(grid,kernel,points.device.type)(points)
+
+
 def surface_trace(grid, velocity, points, *, kernel):
     grid.check_velocity(velocity)
     if any(u.dtype != points.dtype or u.device != points.device for u in velocity):
@@ -76,9 +94,20 @@ def surface_pressure_density(audit, triangles, pressure_mmhg, *, level, kernel):
     """
     if (not isfinite(pressure_mmhg) or type(level) is not int or not 0 <= level <= 6
             or triangles.ndim != 3 or triangles.shape[1:] != (3, 3)
-            or triangles.dtype != audit.X.dtype or triangles.device != audit.X.device
-            or not torch.isfinite(triangles).all()):
+            or triangles.dtype != audit.X.dtype or triangles.device != audit.X.device):
         raise ValueError('matching finite triangles, pressure and level in 0..6 required')
+    if kernel not in ('peskin4','bs4-bs3'):
+        raise ValueError('unknown diagnostic surface kernel')
+    box=(triangles-triangles.new_tensor(audit.grid.origin))/triangles.new_tensor(audit.grid.spacing)
+    finite,inside=torch.stack((torch.isfinite(triangles).all(),
+        (box>=2).all() & (box<box.new_tensor(audit.grid.shape)-2).all())).tolist()
+    if not finite:
+        raise ValueError('matching finite triangles, pressure and level in 0..6 required')
+    # Nonnegative barycentric rules stay inside the triangle convex hull.
+    # If all vertices pass the ORIGINAL margin, every chunk is already checked.
+    # Otherwise retain the original point-by-point support checks as fallback.
+    stencil=(_surface_kernel(audit.grid,kernel,triangles.device.type) if inside
+             else lambda points:surface_stencil(audit.grid,points,kernel=kernel))
     bary = audit.rule(level); q = len(bary)
     batch = max(1, audit.chunk_points//q)
     result = audit.grid.zeros(device=triangles.device, dtype=triangles.dtype)
@@ -86,7 +115,7 @@ def surface_pressure_density(audit, triangles, pressure_mmhg, *, level, kernel):
         nodes = triangles[start:start+batch]
         points = torch.einsum('qa,fai->fqi', bary, nodes).reshape(-1, 3)
         force = (-pressure_mmhg*C*audit.area(nodes)/q)[:, None].expand(-1, q, -1).reshape(-1, 3)
-        for c, (ids, weights) in enumerate(surface_stencil(audit.grid, points, kernel=kernel)):
+        for c, (ids, weights) in enumerate(stencil(points)):
             result[c].flatten().index_add_(0, ids.flatten(),
                 (weights*force[:, c, None]/audit.grid.volume).flatten())
     return result

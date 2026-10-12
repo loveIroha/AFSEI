@@ -16,6 +16,8 @@ class BEHelmholtzWorkspace:
         self.next = tuple(torch.empty_like(d) for d in flow.diagonals)
         self.rhs = tuple(torch.empty_like(d) for d in flow.diagonals)
         self.kernel = tensor_kernel(self._advance, self.u[0].device) if fused else self._advance
+        self.load_density_kernel = tensor_kernel(self._load_density, self.u[0].device) if fused else self._load_density
+        self.load_departure_kernel = tensor_kernel(self._load_departure, self.u[0].device) if fused else self._load_departure
         self.graph_requested = graph and self.u[0].is_cuda
         self.graph = None
 
@@ -23,6 +25,25 @@ class BEHelmholtzWorkspace:
         for b, u, value in zip(self.rhs, self.u, rhs):
             b.copy_(value); u.copy_(value)
         return self.u, self.rhs
+
+    def _load_density(self,density):
+        for b,u,f in zip(self.rhs,self.u,density):
+            b.copy_(self.flow.dt/self.flow.rho*f)
+            u.copy_(b)
+
+    def _load_departure(self,departure,density):
+        for b,u,a,f in zip(self.rhs,self.u,departure,density):
+            b.copy_(a+self.flow.dt/self.flow.rho*f)
+            u.copy_(b)
+
+    def load_forcing(self,density,departure=None):
+        # Compiled pointwise writes construct both stable graph inputs directly;
+        # no intermediate three-grid RHS and subsequent pair of copies.
+        if departure is None:
+            self.load_density_kernel(density)
+        else:
+            self.load_departure_kernel(departure,density)
+        return self.u,self.rhs
 
     def _advance(self):
         f = self.flow
