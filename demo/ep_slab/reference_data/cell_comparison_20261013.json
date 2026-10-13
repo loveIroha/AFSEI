@@ -1,0 +1,255 @@
+{
+  "schema_version": 1,
+  "status": "completed",
+  "gpu": "NVIDIA GeForce RTX 4090",
+  "scope": "fixed tissue, GPB and original ORd, equal external settings within each paired protocol",
+  "primary_server_output": "results/ep_slab_cell_models_20261013",
+  "planar_server_output": "results/ep_slab_planar_models_20261013",
+  "strict_santiago_reproduction": false,
+  "three_dimensional_cases": [
+    {
+      "protocol": "reference_h0.5",
+      "cell_model": "gpb",
+      "external_conditions_sha256": "351e50e92c0416882fb1fd7f149079a750dac12d9b4173e1f2108ea7cd3dc5e1",
+      "arrival_diagonal_end_ms": 39.90833885047587,
+      "propagation_duration_ms": 38.79010349316736,
+      "activated_fraction": 1.0,
+      "initialization": {
+        "policy": "model_native_rest",
+        "conditioning_s": 0.2,
+        "conditioning_ep_steps": 4000,
+        "conditioning_ode_substeps": 100000,
+        "native_voltage_mv": -81.5455936324844,
+        "conditioned_voltage_mv": -81.55550233838377,
+        "conditioned_calcium_um": 0.10595091509613688
+      },
+      "node_count": 4305,
+      "cell_count": 20160,
+      "linear_solver_max_residual_to_tolerance": 0.24939458278599247,
+      "mean_seconds_per_ep_step": 0.01692839216363306
+    },
+    {
+      "protocol": "reference_h0.5",
+      "cell_model": "ord2011_epi",
+      "external_conditions_sha256": "351e50e92c0416882fb1fd7f149079a750dac12d9b4173e1f2108ea7cd3dc5e1",
+      "arrival_diagonal_end_ms": null,
+      "propagation_duration_ms": null,
+      "activated_fraction": 0.01904761904761905,
+      "initialization": {
+        "policy": "model_native_rest",
+        "conditioning_s": 0.2,
+        "conditioning_ep_steps": 4000,
+        "conditioning_ode_substeps": 100000,
+        "native_voltage_mv": -87.0,
+        "conditioned_voltage_mv": -87.96928064513996,
+        "conditioned_calcium_um": 0.07545781952135637
+      },
+      "node_count": 4305,
+      "cell_count": 20160,
+      "linear_solver_max_residual_to_tolerance": 0.24992693705559887,
+      "mean_seconds_per_ep_step": 0.01964896290291411
+    },
+    {
+      "protocol": "reference_h0.25",
+      "cell_model": "gpb",
+      "external_conditions_sha256": "de84b2b319d266fb97f7a591e48ae5ecd3de671b310994e29277c97020f5ace1",
+      "arrival_diagonal_end_ms": 33.70670365112158,
+      "propagation_duration_ms": 32.588522340321326,
+      "activated_fraction": 1.0,
+      "initialization": {
+        "policy": "model_native_rest",
+        "conditioning_s": 0.2,
+        "conditioning_ep_steps": 4000,
+        "conditioning_ode_substeps": 100000,
+        "native_voltage_mv": -81.5455936324844,
+        "conditioned_voltage_mv": -81.55550233838377,
+        "conditioned_calcium_um": 0.10595091509613688
+      },
+      "node_count": 30537,
+      "cell_count": 161280,
+      "linear_solver_max_residual_to_tolerance": 0.2499735638919183,
+      "mean_seconds_per_ep_step": 0.029427136261559402
+    },
+    {
+      "protocol": "reference_h0.25",
+      "cell_model": "ord2011_epi",
+      "external_conditions_sha256": "de84b2b319d266fb97f7a591e48ae5ecd3de671b310994e29277c97020f5ace1",
+      "arrival_diagonal_end_ms": null,
+      "propagation_duration_ms": null,
+      "activated_fraction": 0.02973442053901824,
+      "initialization": {
+        "policy": "model_native_rest",
+        "conditioning_s": 0.2,
+        "conditioning_ep_steps": 4000,
+        "conditioning_ode_substeps": 100000,
+        "native_voltage_mv": -87.0,
+        "conditioned_voltage_mv": -87.96928064513996,
+        "conditioned_calcium_um": 0.07545781952135637
+      },
+      "node_count": 30537,
+      "cell_count": 161280,
+      "linear_solver_max_residual_to_tolerance": 0.2496377350590104,
+      "mean_seconds_per_ep_step": 0.03425443679676391
+    },
+    {
+      "protocol": "reference_h0.125",
+      "cell_model": "gpb",
+      "external_conditions_sha256": "2f4cb01e65426be6614de3507750f90809227132b40f37498f001838d1c71972",
+      "arrival_diagonal_end_ms": 32.08609586333309,
+      "propagation_duration_ms": 30.967871308636667,
+      "activated_fraction": 1.0,
+      "initialization": {
+        "policy": "model_native_rest",
+        "conditioning_s": 0.2,
+        "conditioning_ep_steps": 4000,
+        "conditioning_ode_substeps": 100000,
+        "native_voltage_mv": -81.5455936324844,
+        "conditioned_voltage_mv": -81.55550233838377,
+        "conditioned_calcium_um": 0.10595091509613688
+      },
+      "node_count": 229425,
+      "cell_count": 1290240,
+      "linear_solver_max_residual_to_tolerance": 0.24990524740907658,
+      "mean_seconds_per_ep_step": 0.18491552558766366
+    },
+    {
+      "protocol": "reference_h0.125",
+      "cell_model": "ord2011_epi",
+      "external_conditions_sha256": "2f4cb01e65426be6614de3507750f90809227132b40f37498f001838d1c71972",
+      "arrival_diagonal_end_ms": 74.35633395436996,
+      "propagation_duration_ms": 72.7106570374721,
+      "activated_fraction": 0.8204424103737605,
+      "initialization": {
+        "policy": "model_native_rest",
+        "conditioning_s": 0.2,
+        "conditioning_ep_steps": 4000,
+        "conditioning_ode_substeps": 100000,
+        "native_voltage_mv": -87.0,
+        "conditioned_voltage_mv": -87.96928064513996,
+        "conditioned_calcium_um": 0.07545781952135637
+      },
+      "node_count": 229425,
+      "cell_count": 1290240,
+      "linear_solver_max_residual_to_tolerance": 0.2499226840272878,
+      "mean_seconds_per_ep_step": 0.226257132733784
+    },
+    {
+      "protocol": "literal_table",
+      "cell_model": "gpb",
+      "external_conditions_sha256": "74bbf15a41888ab67db67227bbfecb1060a8c947754792716da0474b90764428",
+      "arrival_diagonal_end_ms": 11.529409180766846,
+      "propagation_duration_ms": 10.20689589067622,
+      "activated_fraction": 1.0,
+      "initialization": {
+        "policy": "model_native_rest",
+        "conditioning_s": 0.2,
+        "conditioning_ep_steps": 4000,
+        "conditioning_ode_substeps": 100000,
+        "native_voltage_mv": -81.5455936324844,
+        "conditioned_voltage_mv": -81.55550233838377,
+        "conditioned_calcium_um": 0.10595091509613688
+      },
+      "node_count": 30537,
+      "cell_count": 161280,
+      "linear_solver_max_residual_to_tolerance": 0.24948438495139286,
+      "mean_seconds_per_ep_step": 0.02865413678965221
+    },
+    {
+      "protocol": "literal_table",
+      "cell_model": "ord2011_epi",
+      "external_conditions_sha256": "74bbf15a41888ab67db67227bbfecb1060a8c947754792716da0474b90764428",
+      "arrival_diagonal_end_ms": null,
+      "propagation_duration_ms": null,
+      "activated_fraction": 0.0,
+      "initialization": {
+        "policy": "model_native_rest",
+        "conditioning_s": 0.2,
+        "conditioning_ep_steps": 4000,
+        "conditioning_ode_substeps": 100000,
+        "native_voltage_mv": -87.0,
+        "conditioned_voltage_mv": -87.96928064513996,
+        "conditioned_calcium_um": 0.07545781952135637
+      },
+      "node_count": 30537,
+      "cell_count": 161280,
+      "linear_solver_max_residual_to_tolerance": 0.24979327101176504,
+      "mean_seconds_per_ep_step": 0.03074091308245746
+    },
+    {
+      "protocol": "time_refined",
+      "cell_model": "gpb",
+      "external_conditions_sha256": "00b43f4cc127741f925ae07a5067ee13317cd9ec6e745b71f5b3f0b9fcb4be2b",
+      "arrival_diagonal_end_ms": 33.19389009347904,
+      "propagation_duration_ms": 32.104776442095826,
+      "activated_fraction": 1.0,
+      "initialization": {
+        "policy": "model_native_rest",
+        "conditioning_s": 0.2,
+        "conditioning_ep_steps": 20000,
+        "conditioning_ode_substeps": 200000,
+        "native_voltage_mv": -81.5455936324844,
+        "conditioned_voltage_mv": -81.55550209610455,
+        "conditioned_calcium_um": 0.10595091509666019
+      },
+      "node_count": 30537,
+      "cell_count": 161280,
+      "linear_solver_max_residual_to_tolerance": 0.2495679683775609,
+      "mean_seconds_per_ep_step": 0.012939087740300843
+    },
+    {
+      "protocol": "time_refined",
+      "cell_model": "ord2011_epi",
+      "external_conditions_sha256": "00b43f4cc127741f925ae07a5067ee13317cd9ec6e745b71f5b3f0b9fcb4be2b",
+      "arrival_diagonal_end_ms": null,
+      "propagation_duration_ms": null,
+      "activated_fraction": 0.04276778989422667,
+      "initialization": {
+        "policy": "model_native_rest",
+        "conditioning_s": 0.2,
+        "conditioning_ep_steps": 20000,
+        "conditioning_ode_substeps": 200000,
+        "native_voltage_mv": -87.0,
+        "conditioned_voltage_mv": -87.96927549435108,
+        "conditioned_calcium_um": 0.07545781952159443
+      },
+      "node_count": 30537,
+      "cell_count": 161280,
+      "linear_solver_max_residual_to_tolerance": 0.24996455645282312,
+      "mean_seconds_per_ep_step": 0.014221971092978493
+    }
+  ],
+  "planar_wave_cases": [
+    {
+      "spacing_mm": 0.0625,
+      "cell_model": "gpb",
+      "cv_cm_s": 73.4236178977775,
+      "t_x05_ms": 6.203027242334358,
+      "t_x15_ms": 19.822623070371993,
+      "activated_fraction": 1.0
+    },
+    {
+      "spacing_mm": 0.0625,
+      "cell_model": "ord2011_epi",
+      "cv_cm_s": 41.11377151195334,
+      "t_x05_ms": 11.215353251190026,
+      "t_x15_ms": 35.53810359067814,
+      "activated_fraction": 1.0
+    },
+    {
+      "spacing_mm": 0.03125,
+      "cell_model": "gpb",
+      "cv_cm_s": 73.87881965482681,
+      "t_x05_ms": 6.195480933778237,
+      "t_x15_ms": 19.731160099635968,
+      "activated_fraction": 1.0
+    },
+    {
+      "spacing_mm": 0.03125,
+      "cell_model": "ord2011_epi",
+      "cv_cm_s": 41.501665979233074,
+      "t_x05_ms": 11.181249522212937,
+      "t_x15_ms": 35.27666777603407,
+      "activated_fraction": 1.0
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "demo": "ep-slab-model-comparison",
+  "schema_version": 1,
+  "base_config": "controlled_gpb.json",
+  "models": [
+    "gpb",
+    "ord2011_epi"
+  ],
+  "spacing_mm": [
+    0.5,
+    0.25,
+    0.125
+  ],
+  "reference_diffusion_cm2_s": [
+    1.171,
+    0.39033333333333337,
+    0.39033333333333337
+  ],
+  "literal_table_check": {
+    "enabled": true,
+    "spacing_mm": 0.25,
+    "diffusion_cm2_s": [
+      11.7,
+      3.9,
+      3.9
+    ]
+  },
+  "time_refinement": {
+    "enabled": true,
+    "spacing_mm": 0.25,
+    "dt_ep_s": 1e-05,
+    "dt_ode_ms": 0.001
+  },
+  "write_vtk_spacing_mm": 0.25
+}

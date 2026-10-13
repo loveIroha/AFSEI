@@ -32,15 +32,18 @@ class TissueDomainConfig:
     mesh: str = 'structured_freudenthal_tetrahedra'
     fiber: tuple = (1., 0., 0.)
     sheet: tuple = (0., 1., 0.)
+    axis_spacing_cm: tuple | None = None
 
     def __post_init__(self):
         for name in ('lengths_cm','origin_cm','fiber','sheet'):
             object.__setattr__(self, name, _vector(getattr(self,name), name, positive=name=='lengths_cm'))
         _positive(self.spacing_cm, 'mesh spacing')
+        if self.axis_spacing_cm is not None:
+            object.__setattr__(self,'axis_spacing_cm',_vector(self.axis_spacing_cm,'axis spacing',positive=True))
+        spacing=self.axis_spacing_cm or (self.spacing_cm,)*3
         if self.mesh != 'structured_freudenthal_tetrahedra':
             raise ValueError('unsupported tissue mesh')
-        if any(round(v/self.spacing_cm) < 1 or abs(round(v/self.spacing_cm)*self.spacing_cm-v)>1e-12
-               for v in self.lengths_cm):
+        if any(round(v/h)<1 or abs(round(v/h)*h-v)>1e-12 for v,h in zip(self.lengths_cm,spacing)):
             raise ValueError('lengths must be integer multiples of spacing_cm')
         if (abs(sum(v*v for v in self.fiber)-1) > 1e-12 or
                 abs(sum(v*v for v in self.sheet)-1) > 1e-12 or
@@ -101,15 +104,19 @@ class TissueBoundary:
 @dataclass(frozen=True)
 class TissueInitial:
     state: str = 'afsei_pinned_gpb_rest'
-    voltage_v: float = RESTING_VOLTAGE_V
+    voltage_v: float | None = RESTING_VOLTAGE_V
     stretch: float = 1.
     zs: float = 0.
     zw: float = 0.
+    conditioning_s: float = 0.
 
     def __post_init__(self):
-        if (self.state != 'afsei_pinned_gpb_rest' or self.voltage_v != RESTING_VOLTAGE_V or
-                self.stretch != 1. or self.zs != 0. or self.zw != 0.):
-            raise ValueError('use the pinned GPB rest state with unit stretch and zero distortion')
+        valid=(self.state=='afsei_pinned_gpb_rest' and self.voltage_v==RESTING_VOLTAGE_V) or (
+            self.state=='model_native_rest' and self.voltage_v is None)
+        if not valid or self.stretch!=1. or self.zs!=0. or self.zw!=0.:
+            raise ValueError('use a declared native rest state with unit stretch and zero distortion')
+        if not isfinite(self.conditioning_s) or self.conditioning_s<0:
+            raise ValueError('conditioning time must be finite nonnegative seconds')
 
 
 @dataclass(frozen=True)
@@ -181,8 +188,11 @@ class EPTissueConfig:
     def __post_init__(self):
         if type(self.schema_version) is not int or self.schema_version != 1 or not self.case_name:
             raise ValueError('named experiment with schema_version=1 required')
-        if self.cell_model != 'gpb' or self.advance_land is not False:
-            raise ValueError('EP-only experiment uses GPB and does not advance Land')
+        if self.cell_model not in ('gpb','ord2011_epi','ord2011_endo') or self.advance_land is not False:
+            raise ValueError('select GPB or original ORd; this EP-only experiment does not advance Land')
+        if self.cell_model!='gpb' and self.initial.state!='model_native_rest':
+            raise ValueError('ORd requires its own native rest initialization')
+        _grid_time(self.initial.conditioning_s,self.time.dt_ep_s,'conditioning time')
         lo=self.domain.origin_cm
         hi=tuple(o+L for o,L in zip(lo,self.domain.lengths_cm))
         for a,b,m,M in zip(lo,hi,self.stimulus.minimum_cm,self.stimulus.maximum_cm):

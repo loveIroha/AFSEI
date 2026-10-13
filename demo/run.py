@@ -8,7 +8,8 @@ ENTRIES={'ideal-lv-mac':'ideal_lv_fsi/run_mac.py',
          'ideal-lv-fem':'ideal_lv_fsi/run_fem.py',
          'ideal-valve-mac':'ideal_valve_fsi/run_mac.py',
          'real-lv':'real_lv_fsi/run_mac.py',
-         'ep-slab':'ep_slab/run.py'}
+         'ep-slab':'ep_slab/run.py',
+         'ep-slab-model-comparison':'ep_slab/run_model_comparison.py'}
 
 def main(argv=None):
     p=argparse.ArgumentParser(description=__doc__)

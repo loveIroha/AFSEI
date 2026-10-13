@@ -16,18 +16,19 @@ class TissueSlabMesh:
 def structured_tissue_slab(lengths_cm, spacing_cm, origin_cm=(0., 0., 0.), *, device='cpu'):
     """Six Freudenthal tetrahedra per brick; shared faces have matching diagonals.
 
-    spacing_cm denotes brick edge spacing, not the longest tetrahedron edge.
+    spacing_cm denotes scalar or three axis spacings, not tetrahedron edge length.
     All lengths must be integral multiples of it; no silent geometry rounding.
     Nodes have ijk ordering with z varying fastest, and cells positive orientation.
     """
     lengths, origin = tuple(lengths_cm), tuple(origin_cm)
+    spacings=tuple(spacing_cm) if isinstance(spacing_cm,(tuple,list)) else (spacing_cm,)*3
     if (len(lengths) != 3 or len(origin) != 3 or
             any(not isfinite(v) or v <= 0 for v in lengths) or
             any(not isfinite(v) for v in origin) or
-            not isfinite(spacing_cm) or spacing_cm <= 0):
+            len(spacings)!=3 or any(not isfinite(h) or h<=0 for h in spacings)):
         raise ValueError('three positive lengths, finite origin and positive spacing required')
-    shape = tuple(round(v/spacing_cm) for v in lengths)
-    if any(n < 1 or abs(n*spacing_cm-v) > 1e-12 for n,v in zip(shape, lengths)):
+    shape = tuple(round(v/h) for v,h in zip(lengths,spacings))
+    if any(n < 1 or abs(n*h-v) > 1e-12 for n,v,h in zip(shape,lengths,spacings)):
         raise ValueError('slab lengths must be integer multiples of mesh spacing')
     axes = [torch.linspace(o, o+v, n+1, dtype=torch.float64, device=device)
             for o,v,n in zip(origin, lengths, shape)]

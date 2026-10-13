@@ -3,6 +3,8 @@
 AFSEI：电–流固三场耦合（electrophysiology–fluid–solid interaction）。
 
 独立的固定组织 EP 传播实验见 [Santiago 图 6 / GPB demo](demo/ep_slab/README.md)。
+统一外部条件的 [GPB / 原始 ORd 传播对照](demo/ep_slab/CELL_MODEL_COMPARISON.md)
+提供三维角部刺激、时间/空间细化和平面波控制；使用已有 nodal FEM + AmgX。
 区域、组织参数、刺激、边界、初值和观测在标准 JSON 中声明，直接调用现有
 nodal FEM/AmgX 与 GPB 求解器：
 `python demo/run.py demo/ep_slab/configs/santiago_gpb.json`。

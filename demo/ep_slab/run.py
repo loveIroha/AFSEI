@@ -53,7 +53,7 @@ def main(argv=None):
     config=load_config(args.config,CONFIG) if args.config else CONFIG
     changes={}
     if args.mesh_spacing_mm is not None:
-        changes['domain']=replace(config.domain,spacing_cm=args.mesh_spacing_mm/10)
+        changes['domain']=replace(config.domain,spacing_cm=args.mesh_spacing_mm/10,axis_spacing_cm=None)
     if args.duration_ms is not None:
         changes['time']=replace(config.time,end_time_s=args.duration_ms/1000)
     if args.ep_backend is not None:

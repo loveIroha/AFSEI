@@ -11,6 +11,9 @@ GPB/Land CUDA 接口被复用，但 `advance_land=false`，不推进 Land，也�
 
 实际 GPU 结果、网格对照和适用范围见 [验证记录](VALIDATION.md)。
 
+GPB 与原始 ORd 在统一外部条件下的实测比较、独立标准 JSON 和运行命令见
+[细胞模型对照](CELL_MODEL_COMPARISON.md)。该可选实验保留本页 GPB 基线配置。
+
 ## 配置、实验与求解器分离
 
 | 文件 | 职责 |

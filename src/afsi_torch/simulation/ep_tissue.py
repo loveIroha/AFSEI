@@ -1,4 +1,4 @@
-"""Fixed-tissue experiment orchestration; calls existing EP and GPB solvers.
+"""Fixed-tissue experiments; calls shared EP and selectable cell solvers.
 
 No LV mesh, circulation, fluid solve, mechanical solve or duplicated PDE/ODE.
 """
@@ -10,7 +10,8 @@ import xml.etree.ElementTree as ET
 import numpy as np
 import torch
 from ..cycle_checkpoint import atomic_json
-from ..ep import Monodomain, GPBLand, initial_state
+from ..ep import Monodomain
+from ..ep.cells import prepare_cell_model
 from ..ep.experiment import EPTissueConfig
 from ..geometry.tissue_slab import structured_tissue_slab
 
@@ -67,7 +68,7 @@ def _write_fields(path, X, cells, voltage, calcium, activation, mask):
 
 
 def _plots(folder, X, shape, observation, slice_index, line, activation, times, volts, calcium,
-           probes, snapshot_steps, snapshots, dt):
+           probes, snapshot_steps, snapshots, dt, *, model_name='GPB'):
     import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
@@ -93,7 +94,7 @@ def _plots(folder, X, shape, observation, slice_index, line, activation, times, 
         label='('+', '.join(f'{v:g}' for v in X[node])+') cm'
         ax[0].plot(times*1000,volts[:,j]*1000,label=label)
         ax[1].plot(times*1000,calcium[:,j]*1000)
-    ax[0].set(ylabel='Voltage (mV)',title='GPB at fixed tissue probes')
+    ax[0].set(ylabel='Voltage (mV)',title=f'{model_name} at fixed tissue probes')
     ax[0].legend(fontsize=8,ncol=2)
     ax[1].set(xlabel='Time (ms)',ylabel='Cytosolic calcium (uM)')
     for a in ax: a.grid(alpha=.25)
@@ -119,7 +120,7 @@ def run(config: EPTissueConfig, output, *, device='cuda'):
         raise ValueError('typed EPTissueConfig required')
     device=torch.device(device)
     if device.type!='cuda' or not torch.cuda.is_available():
-        raise RuntimeError('the existing GPB ODE solver requires an actual CUDA device')
+        raise RuntimeError('the fixed-tissue EP and cell solvers require an actual CUDA device')
     if device.index is None:
         device=torch.device('cuda',torch.cuda.current_device())
     torch.cuda.set_device(device)
@@ -136,17 +137,16 @@ def run(config: EPTissueConfig, output, *, device='cuda'):
     started=time.perf_counter()
     ep=None
     try:
-        mesh=structured_tissue_slab(config.domain.lengths_cm,config.domain.spacing_cm,
+        mesh=structured_tissue_slab(config.domain.lengths_cm,config.domain.axis_spacing_cm or config.domain.spacing_cm,
                                     config.domain.origin_cm,device=device)
         X,cells=mesh.X,mesh.cells
         f=X.new_tensor(config.domain.fiber).expand(len(X),-1)
         s=X.new_tensor(config.domain.sheet).expand(len(X),-1)
         ep=Monodomain(X,cells,f,s,parameters=config.parameters,numerics=config.ep_numerics)
         dt=config.time.dt_ep_s
-        ode=GPBLand(dt,config.time.dt_ode_ms)
         ep.prepare(dt)
-        state=initial_state(X[:,0])
-        zero=torch.zeros_like(state.voltage_v); stretch=torch.ones_like(zero)
+        ode,state=prepare_cell_model(config,X[:,0])
+        zero=torch.zeros_like(state.voltage_v)
         mask=stimulus_mask(X,config.stimulus)
         if not mask.any(): raise ValueError('mesh contains no stimulated nodes')
         stimulus=stimulus_field(X,config.stimulus)
@@ -154,7 +154,7 @@ def run(config: EPTissueConfig, output, *, device='cuda'):
         probes,line,slice_index=observation_indices(mesh,config.domain,config.observations)
         probe_gpu=torch.as_tensor(probes,device=device)
         trace_steps=[0]; voltage_trace=[state.voltage_v[probe_gpu].clone()]
-        calcium_trace=[state.gpb[probe_gpu,37].clone()]
+        calcium_trace=[ode.calcium(state)[probe_gpu].clone()]
         steps=round(config.time.end_time_s/dt)
         requested={round(t/dt) for t in config.output.snapshot_times_s if t<=config.time.end_time_s+1e-12}
         requested.update((0,steps))
@@ -169,7 +169,7 @@ def run(config: EPTissueConfig, output, *, device='cuda'):
             if config.output.write_vtk and (step%config.output.vtk_every==0 or step==steps):
                 name=f'fields_{step:06d}.vtu'
                 _write_fields(folder/name,Xcpu,Ccpu,state.voltage_v.cpu().numpy(),
-                              state.gpb[:,37].cpu().numpy(),activation.cpu().numpy(),Mcpu)
+                              ode.calcium(state).cpu().numpy(),activation.cpu().numpy(),Mcpu)
                 vtk_frames.append((step*dt,name))
         observe(0)
         torch.cuda.synchronize(device)
@@ -178,8 +178,8 @@ def run(config: EPTissueConfig, output, *, device='cuda'):
         maximum_ratio=0.; iterations=0
         for step in range(steps):
             previous=state.voltage_v
-            state,_,info=ode.step(ep,state,stretch,zero,zero,step*dt,
-                stimulus if pulse_active(step,dt,config.stimulus) else zero,advance_land=False)
+            state,_,info=ode.step(ep,state,step*dt,
+                stimulus if pulse_active(step,dt,config.stimulus) else zero)
             activation=first_activation(previous,state.voltage_v,activation,step*dt,dt,
                                          config.observations.activation_threshold_mv/1000)
             iterations+=info.iterations
@@ -187,7 +187,7 @@ def run(config: EPTissueConfig, output, *, device='cuda'):
             accepted=step+1
             if accepted%config.output.trace_every==0 or accepted==steps:
                 trace_steps.append(accepted); voltage_trace.append(state.voltage_v[probe_gpu].clone())
-                calcium_trace.append(state.gpb[probe_gpu,37].clone())
+                calcium_trace.append(ode.calcium(state)[probe_gpu].clone())
             if accepted in requested or (config.output.write_vtk and
                     (accepted%config.output.vtk_every==0 or accepted==steps)):
                 t0=time.perf_counter(); observe(accepted); export_seconds+=time.perf_counter()-t0
@@ -198,11 +198,12 @@ def run(config: EPTissueConfig, output, *, device='cuda'):
                       f'V=[{lo:.3f},{hi:.3f}] mV, activated={int(count)}/{len(X)}',flush=True)
         torch.cuda.synchronize(device)
         integration_seconds=time.perf_counter()-integration_started-export_seconds
-        lat=activation.cpu().numpy(); v=state.voltage_v.cpu().numpy(); ca=state.gpb[:,37].cpu().numpy()
+        lat=activation.cpu().numpy(); v=state.voltage_v.cpu().numpy(); ca=ode.calcium(state).cpu().numpy()
         times=np.array(trace_steps)*dt
         voltages=torch.stack(voltage_trace).cpu().numpy(); calcium=torch.stack(calcium_trace).cpu().numpy()
-        np.savez_compressed(folder/'final_state.npz',voltage_v=v,gpb=state.gpb.cpu().numpy(),
-                            activation_time_s=lat,calcium_mm=ca)
+        ionic=ode.ionic(state).cpu().numpy()
+        np.savez_compressed(folder/'final_state.npz',voltage_v=v,ionic_state=ionic,
+            **{('gpb' if config.cell_model=='gpb' else 'ord'):ionic},activation_time_s=lat,calcium_mm=ca)
         np.savez_compressed(folder/'voltage_snapshots.npz',time_s=np.array(snapshot_steps)*dt,
                             voltage_v=np.stack(snapshots))
         # Small readable probe table: time, V and calcium for each resolved probe.
@@ -221,7 +222,7 @@ def run(config: EPTissueConfig, output, *, device='cuda'):
             ET.ElementTree(root).write(folder/'series.pvd',encoding='utf-8',xml_declaration=True)
         if config.output.write_plots:
             _plots(folder,Xcpu,tuple(n+1 for n in mesh.shape),config.observations,slice_index,line,
-                   lat,times,voltages,calcium,probes,snapshot_steps,snapshots,dt)
+                   lat,times,voltages,calcium,probes,snapshot_steps,snapshots,dt,model_name=config.cell_model)
         def finite_value(a):
             return float(a) if np.isfinite(a) else None
         backend=ep._systems[dt][2]
@@ -248,6 +249,9 @@ def run(config: EPTissueConfig, output, *, device='cuda'):
                          activation_ms=finite_value(lat[node]*1000)) for p,node in zip(config.observations.probes_cm,probes)],
             slice_resolved_cm=float(grid_coordinate(mesh,config.domain,config.observations.slice_axis,slice_index)),
             gpu=torch.cuda.get_device_name(device),dtype='float64',device=str(device),
+            cell_model=config.cell_model,cell_provenance=ode.provenance(),
+            initial_conditioning_s=config.initial.conditioning_s,
+            initialization=ode.initialization_report,
             dt_ep_ms=dt*1000,dt_ode_ms=ode.dt_ode_ms,ode_substeps=steps*ode.substeps,
             setup_seconds=setup_seconds,integration_seconds=integration_seconds,
             mean_seconds_per_ep_step=integration_seconds/steps,field_export_seconds=export_seconds,
