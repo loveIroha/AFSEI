@@ -279,7 +279,8 @@ def load_config(path, cls=LVSimulationConfig):
         data=json.load(stream)
     if isinstance(data,dict) and 'demo' in data:
         names={'ideal-lv-mac':'LVSimulationConfig','ideal-lv-fem':'LVFEMSimulationConfig',
-               'ideal-valve-mac':'ValveSimulationConfig','real-lv':'PaperLVConfig'}
+               'ideal-valve-mac':'ValveSimulationConfig','real-lv':'PaperLVConfig',
+               'ep-slab':'EPTissueConfig'}
         actual=cls.__name__ if isinstance(cls,type) else type(cls).__name__
         if names.get(data.pop('demo'))!=actual:
             raise ValueError('JSON demo does not match this entry point')

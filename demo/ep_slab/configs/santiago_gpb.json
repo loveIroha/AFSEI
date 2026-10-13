@@ -1,0 +1,81 @@
+{
+  "demo": "ep-slab",
+  "schema_version": 1,
+  "case_name": "santiago2018_fig6_gpb_fixed_slab",
+  "cell_model": "gpb",
+  "advance_land": false,
+  "domain": {
+    "lengths_cm": [2.0, 0.7, 0.3],
+    "origin_cm": [0.0, 0.0, 0.0],
+    "spacing_cm": 0.025,
+    "mesh": "structured_freudenthal_tetrahedra",
+    "fiber": [1.0, 0.0, 0.0],
+    "sheet": [0.0, 1.0, 0.0]
+  },
+  "parameters": {
+    "capacitance_uf_per_cm2": 1.0,
+    "surface_to_volume_per_cm": 0.1,
+    "conductivity_us_per_cm": [1.17, 0.39, 0.39]
+  },
+  "ep_numerics": {
+    "discretization": "nodal_p1",
+    "backend": "amgx_pcg_amg",
+    "solver": {
+      "rtol": 1e-10,
+      "atol": 1e-13,
+      "max_iterations": 1000,
+      "recompute_every": 40,
+      "check_every": 5
+    }
+  },
+  "time": {
+    "dt_ep_s": 0.00005,
+    "dt_ode_ms": 0.002,
+    "end_time_s": 0.08
+  },
+  "stimulus": {
+    "kind": "box_current",
+    "minimum_cm": [0.0, 0.0, 0.0],
+    "maximum_cm": [0.15, 0.15, 0.15],
+    "amplitude_ua_per_cm2": 35.714285714285715,
+    "start_s": 0.0,
+    "duration_s": 0.002
+  },
+  "boundary": {
+    "electrical": "zero_normal_current_all_faces",
+    "geometry": "fixed_reference",
+    "solid_displacement_cm": [0.0, 0.0, 0.0],
+    "fluid_velocity_cm_s": [0.0, 0.0, 0.0]
+  },
+  "initial": {
+    "state": "afsei_pinned_gpb_rest",
+    "voltage_v": -0.0815455936324844,
+    "stretch": 1.0,
+    "zs": 0.0,
+    "zw": 0.0
+  },
+  "observations": {
+    "activation_threshold_mv": 0.0,
+    "slice_axis": 2,
+    "slice_coordinate_cm": 0.0,
+    "line_axis": 0,
+    "line_anchor_cm": [0.0, 0.0, 0.0],
+    "probes_cm": [[0.0, 0.0, 0.0], [0.5, 0.0, 0.0], [1.0, 0.0, 0.0],
+                  [1.5, 0.0, 0.0], [2.0, 0.0, 0.0], [2.0, 0.7, 0.3]]
+  },
+  "output": {
+    "log_every": 100,
+    "trace_every": 10,
+    "vtk_every": 200,
+    "write_vtk": true,
+    "write_plots": true,
+    "snapshot_times_s": [0.0, 0.002, 0.005, 0.01, 0.02, 0.04, 0.06, 0.08]
+  },
+  "reference": {
+    "doi": "10.1002/cnm.3140",
+    "figure": "6; section 3.1; Table 1",
+    "comparison_scope": "Santiago slab geometry and bulk parameters; AFSEI GPB instead of O Hara Rudy",
+    "parameter_source": "Table 1: conductivity (0.00117,0.00039,0.00039) mS/cm; Sv=0.1/cm; Cm=1 microF/cm2",
+    "stimulus_source": "Niederer 2011 DOI 10.1098/rsta.2011.0139: 1.5mm cube, 2ms; membrane equivalent 50000/1400 microA/cm2. Retain this membrane current, not its volumetric 50000 microA/cm3 when using Santiago Sv=0.1/cm."
+  }
+}

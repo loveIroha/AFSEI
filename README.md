@@ -2,6 +2,11 @@
 
 AFSEI：电–流固三场耦合（electrophysiology–fluid–solid interaction）。
 
+独立的固定组织 EP 传播实验见 [Santiago 图 6 / GPB demo](demo/ep_slab/README.md)。
+区域、组织参数、刺激、边界、初值和观测在标准 JSON 中声明，直接调用现有
+nodal FEM/AmgX 与 GPB 求解器：
+`python demo/run.py demo/ep_slab/configs/santiago_gpb.json`。
+
 当前主线采用原 AFSI_GPU 的规则 MAC 网格与 BE–BE 隐式流固求解器，入口为 `scripts/run_afsei.py`。
 EP 默认使用四面体 P1 顶点积分与集中质量，PyTorch 装配、AmgX PCG-AMG GPU 求解；
 GPB/Land 使用 CUDA，主动张力取代原自定义波形。配置、安装及实测见
