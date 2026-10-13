@@ -12,7 +12,7 @@ import torch
 from ..config import _decode
 from ..mesh_io import ImportedSolidMesh
 from ..mac.paper_coupling import PaperState
-from .config import AFSEIConfig
+from .config import AFSEIConfig, decode_checkpoint_config
 from .driver import AFSEIStepper,CoupledState,StrainHistory
 from .tissue import TissueState
 from .protocol import CycleState
@@ -109,7 +109,7 @@ def load(path,device='cuda'):
         for name,value in data.items():
             if value.dtype != (np.int64 if name in INTEGER else np.float64) or not np.isfinite(value).all():
                 raise ValueError('invalid AFSEI checkpoint array type or values')
-        config = _decode(AFSEIConfig,metadata['config'])
+        config = decode_checkpoint_config(metadata['config'])
         tensor = lambda name: torch.as_tensor(data[name],device=device)
         mesh = ImportedSolidMesh(*(tensor(n) for n in MESH),metadata['vertex_count'],metadata['mesh_metadata'])
         isovolumic = rcr or metadata['producer'] == 'afsei-mac-isovolumic-validation'

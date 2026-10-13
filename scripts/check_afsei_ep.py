@@ -6,6 +6,8 @@ import time
 import torch
 from afsi_torch.paper_lv import PaperLVConfig, imported_model
 from afsi_torch.ep import Monodomain, GPBLand, initial_state, LandQuadratureLoad
+from afsi_torch.ep.numerics import MonodomainNumerics
+from afsi_torch.ep.mapping import source_p1_fields
 
 
 def main():
@@ -13,6 +15,8 @@ def main():
     parser.add_argument('--source-dir',default='/mnt/large2/gjh/realistic_left_ventricle')
     parser.add_argument('--steps',type=int,default=40,help='EP steps only; 40 steps = 2 ms')
     parser.add_argument('--output',type=Path)
+    parser.add_argument('--ep-discretization',choices=('nodal_p1','consistent_p1'),default='nodal_p1')
+    parser.add_argument('--ep-backend',choices=('amgx_pcg_amg','torch_pcg_jacobi'),default='amgx_pcg_amg')
     args = parser.parse_args()
     if args.steps < 1 or args.steps > 400:
         parser.error('component check needs 1..400 EP steps')
@@ -21,15 +25,16 @@ def main():
     t0 = time.perf_counter()
     solid = imported_model(PaperLVConfig(source_dir=args.source_dir),device='cuda')
     mesh = solid.mesh
-    # This smoke check explicitly uses AFSI's DG0 directions. Reproducing the
-    # source EP's CG1 interpolation requires a verified nodal direction mapping.
-    ep = Monodomain(mesh.X,mesh.cells,mesh.fiber,mesh.sheet,directions='cell')
+    fiber,sheet,stimulus_mask,_ = source_p1_fields(mesh)
+    ep = Monodomain(mesh.X,mesh.cells,fiber,sheet,directions='nodal',
+        numerics=MonodomainNumerics(args.ep_discretization,args.ep_backend))
     ode = GPBLand()
+    ep.prepare(ode.dt_ep_s)
     state = initial_state(mesh.X[:,0])
     stretch = state.voltage_v.new_ones(len(mesh.X))
     zero = torch.zeros_like(stretch)
     stimulus = torch.zeros_like(stretch)
-    endo_nodes = torch.unique(solid.endo_faces)
+    endo_nodes = torch.nonzero(stimulus_mask).flatten()
     stimulus[endo_nodes] = 25.0
     max_residual_ratio = 0.0
     for step in range(args.steps):
@@ -49,7 +54,8 @@ def main():
         gpu=torch.cuda.get_device_name(),node_count=len(mesh.X),cell_count=len(mesh.cells),
         ep_steps=args.steps,ep_step_ms=ode.dt_ep_s*1000,ode_step_ms=ode.dt_ode_ms,
         substeps_per_ep=ode.substeps,stimulated_endo_nodes=len(endo_nodes),
-        ep_directions='AFSI DG0; source CG1 mapping pending',
+        ep_directions='source-serial-cg1',
+        ep_discretization=ep.numerics.discretization,ep_backend=ep.numerics.backend,
         voltage_min_mv=state.voltage_v.min().item()*1000,voltage_max_mv=state.voltage_v.max().item()*1000,
         calcium_min_um=state.gpb[:,37].min().item()*1000,calcium_max_um=state.gpb[:,37].max().item()*1000,
         tension_min_cgs=ta.min().item(),tension_max_cgs=ta.max().item(),

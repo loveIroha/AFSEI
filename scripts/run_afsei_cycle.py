@@ -10,6 +10,8 @@ from afsi_torch.ep import checkpoint
 from afsi_torch.ep import mac_balanced_checkpoint as restart
 from afsi_torch.ep.mac_cycle import CardiacStepper,PHASES
 from afsi_torch.ep.protocol import ticks
+from afsi_torch.ep.numerics import MonodomainNumerics
+from afsi_torch.config import load_config
 
 
 def publish_json(path,data):
@@ -27,12 +29,19 @@ def main():
     p.add_argument('--cycles',type=int,help='fresh run only; default 2, period 800 ms')
     p.add_argument('--duration-ms',type=float,help='optional short interval, not complete-cycle validation')
     p.add_argument('--checkpoint-every',type=int,default=100)
+    p.add_argument('--ep-discretization',choices=('nodal_p1','consistent_p1'))
+    p.add_argument('--ep-backend',choices=('amgx_pcg_amg','torch_pcg_jacobi'))
+    p.add_argument('--ep-config',type=Path,help='MonodomainNumerics JSON; fresh runs only')
     p.add_argument('--reuse-step-tangent',action=argparse.BooleanOptionalAction,default=None,
                    help='Reuse the mechanical tangent inside one step, with fresh-Newton fallback.')
     p.add_argument('--output',type=Path,required=True)
     a=p.parse_args()
+    if a.ep_config and (a.ep_discretization or a.ep_backend):
+        p.error('select --ep-config or individual EP overrides')
     if not torch.cuda.is_available() or a.checkpoint_every<1: p.error('CUDA and positive checkpoint interval required')
     if a.resume:
+        if a.ep_discretization or a.ep_backend or a.ep_config:
+            p.error('resume restores EP discretization/backend; overrides are for fresh runs only')
         if a.cycles is not None or a.reference_checkpoint: p.error('resume restores cycle count and configuration')
         d,state,progress=restart.load(a.resume,cardiac=True)
     else:
@@ -41,12 +50,16 @@ def main():
         if cycles<1: p.error('positive cycle count required')
         old,source,_=checkpoint.load(a.reference_checkpoint)
         cfg=replace(old.config,prescribed_endocardial_pressure_mmhg=0.,
+            ep_numerics=load_config(a.ep_config,MonodomainNumerics) if a.ep_config else
+                MonodomainNumerics(a.ep_discretization or 'nodal_p1',
+                                   a.ep_backend or 'amgx_pcg_amg'),
             protocol=replace(old.protocol,pulse_starts_s=tuple(.5+.8*i for i in range(cycles))))
         d=CardiacStepper(old.mesh,cfg,cycles=cycles)
         del old,source
         state=d.initialize_preload(a.preload)
         progress=dict(preload_source=str(a.preload),ep_steps=0,ode_substeps=0,
                       phase_seen={},max_mass_error_ml_s=0.,max_cumulative_mass_error_ml=0.)
+    d.ep.prepare(d.protocol.dt_ep_s)
     if a.reuse_step_tangent is not None: d.reuse_step_tangent=a.reuse_step_tangent
     if state.tick>=d.end_tick: p.error('checkpoint has already reached the requested cycle end')
     target=d.end_tick
@@ -105,6 +118,8 @@ def main():
                 short_interval_requested=a.duration_ms is not None,
                 pointwise_wall_impermeability_established=False,
                 fluid_grid='original Cartesian MAC',checkpoint=str(a.output/'checkpoint.npz'))
+            report['ep_numerics'] = dict(discretization=d.ep.numerics.discretization,
+                                         backend=d.ep.numerics.backend)
             publish_json(a.output/'report.json',report)
             publish_json(a.output/'progress.json',report)
     print(json.dumps(report,indent=2),flush=True)

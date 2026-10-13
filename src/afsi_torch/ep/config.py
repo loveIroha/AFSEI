@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from math import isfinite
 from ..paper_lv import PaperLVConfig
 from .monodomain import MonodomainParameters
+from .numerics import MonodomainNumerics
 from .protocol import EPProtocol,ticks
 from .tissue import GPBLand
 from .source_mechanics import source_fsi_config,source_parameters_match
@@ -12,6 +13,7 @@ from .source_mechanics import source_fsi_config,source_parameters_match
 class AFSEIConfig:
     fsi: PaperLVConfig = field(default_factory=PaperLVConfig)
     ep: MonodomainParameters = field(default_factory=MonodomainParameters)
+    ep_numerics: MonodomainNumerics = field(default_factory=MonodomainNumerics)
     protocol: EPProtocol = field(default_factory=EPProtocol)
     dt_ode_ms: float = .002
     start_time_s: float = .5
@@ -28,6 +30,7 @@ class AFSEIConfig:
 
     def __post_init__(self):
         if (not isinstance(self.fsi,PaperLVConfig) or not isinstance(self.ep,MonodomainParameters)
+                or not isinstance(self.ep_numerics,MonodomainNumerics)
                 or not isinstance(self.protocol,EPProtocol) or self.fsi.solid_degree != 5
                 or type(self.max_retries) is not int or self.max_retries < 0
                 or self.direction_mapping not in ('source-serial-cg1','afsi-dg0')
@@ -47,3 +50,18 @@ class AFSEIConfig:
             raise ValueError('mechanical step must contain at least one EP tick')
         if dt_ticks & (dt_ticks-1):
             raise ValueError('mechanical maximum step must contain a power-of-two number of EP ticks')
+
+
+def decode_checkpoint_config(data):
+    """Missing numerical settings identify the original consistent/Jacobi EP.
+
+    Fresh configs default to nodal/AmgX; a restart never silently switches
+    discretization. A fresh run from a reference checkpoint selects defaults
+    explicitly in its entry point.
+    """
+    from dataclasses import asdict
+    from ..config import _decode
+    if not isinstance(data, dict):
+        raise ValueError('checkpoint AFSEI config must be an object')
+    return _decode(AFSEIConfig, dict(data, ep_numerics=data.get(
+        'ep_numerics', asdict(MonodomainNumerics.legacy()))))

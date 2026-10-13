@@ -161,6 +161,7 @@ def run(*,config=None,output=None,resume=None,duration_s=.002,device='cuda',prof
                     ('gpb_land_seconds','monodomain_seconds','load_staging_seconds','implicit_fsi_seconds','strain_feedback_seconds')} if profile else {},
                 timing_notes='stage times include rejected trials and lazy compilation; synchronized profiling adds overhead; nonlinear counters describe the accepted attempt'),
             direction_mapping=config.direction_mapping,stimulated_nodes=int(driver.stimulus_mask.sum()),
+            ep_discretization=config.ep_numerics.discretization,ep_backend=config.ep_numerics.backend,
             mechanics_profile=config.mechanics_profile,
             source_mechanics_parameters_aligned=config.mechanics_profile == 'source',
             mechanical_direction_discretization='cell-expression-equivalent DG0',

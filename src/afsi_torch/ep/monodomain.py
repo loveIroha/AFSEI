@@ -1,4 +1,4 @@
-"""Consistent P1 monodomain FE assembly and PCG in PyTorch, on the tensor device.
+"""P1 monodomain with vertex quadrature and optional AmgX PCG-AMG.
 
 Reference coordinates: cm; voltage: V; time: s; currents: microA/cm^2.
 Numerical conductivities are microS/cm. Defaults retain Active_land.ufl's
@@ -11,6 +11,7 @@ from math import isfinite
 import torch
 from ..p1 import prepare_p1
 from ..fluid.solvers import SolverOptions, pcg
+from .numerics import MonodomainNumerics
 
 
 @dataclass(frozen=True)
@@ -43,20 +44,28 @@ class Monodomain:
     Directions are never silently normalized, averaged or converted to P1.
     """
     def __init__(self, X, cells, fiber, sheet, *, directions='nodal', parameters=None,
-                 solver_options=None):
+                 solver_options=None, numerics=None):
         if directions not in ('nodal', 'cell'):
             raise ValueError('directions must be nodal or cell')
-        self.geometry = prepare_p1(X, cells, degree=5)
+        self.numerics = numerics or MonodomainNumerics()
+        self.geometry = prepare_p1(X, cells,
+            degree=5 if self.numerics.discretization == 'consistent_p1' else 2)
         self.X = X.detach().clone()
         self.cells = self.geometry.cells
         self.parameters = parameters or MonodomainParameters()
-        self.solver_options = solver_options or SolverOptions(rtol=1e-10, atol=1e-13, check_every=5)
+        self.solver_options = solver_options or self.numerics.solver
+        self._systems = {}
         count = len(X) if directions == 'nodal' else len(cells)
         for value in (fiber, sheet):
             if (value.shape != (count, 3) or value.dtype != X.dtype or value.device != X.device
                     or not torch.isfinite(value).all()):
                 raise ValueError('directions must match mesh shape, dtype and device')
-        N, weights = self.geometry.values, self.geometry.weights
+        volume = self.geometry.weights.sum(dim=1)
+        if self.numerics.discretization == 'nodal_p1':
+            N = torch.eye(4, dtype=X.dtype, device=X.device)
+            weights = (volume[:, None]/4).expand(-1, 4)
+        else:
+            N, weights = self.geometry.values, self.geometry.weights
         if directions == 'nodal':
             f = torch.einsum('qa,eai->eqi', N, fiber[self.cells])
             s = torch.einsum('qa,eai->eqi', N, sheet[self.cells])
@@ -71,13 +80,55 @@ class Monodomain:
         gradients = self.geometry.gradients[:, 0]
         local_mass = torch.einsum('eq,qa,qb->eab', weights, N, N)
         local_stiffness = torch.einsum('eq,eaI,eqIJ,ebJ->eab', weights, gradients, D, gradients)
-        self.mass = _assemble(self.cells, local_mass, len(X))
         self.stiffness = _assemble(self.cells, local_stiffness, len(X))
         scatter = lambda local: X.new_zeros(len(X)).index_add(0, self.cells.reshape(-1), local.reshape(-1))
         self.mass_diagonal = scatter(local_mass.diagonal(dim1=-2, dim2=-1))
         self.stiffness_diagonal = scatter(local_stiffness.diagonal(dim1=-2, dim2=-1))
+        if self.numerics.discretization == 'nodal_p1':
+            indices = torch.arange(len(X), device=X.device)
+            self.mass = torch.sparse_coo_tensor(torch.stack((indices, indices)),
+                self.mass_diagonal, (len(X), len(X)),
+                check_invariants=True).coalesce().to_sparse_csr()
+        else:
+            self.mass = _assemble(self.cells, local_mass, len(X))
         if (self.mass_diagonal <= 0).any():
             raise ValueError('every EP node must belong to a tetrahedron')
+        # Land feedback retains the ORIGINAL consistent L2 projection even
+        # when the PDE uses vertex quadrature. Affine P1 integrals are analytic.
+        self.projection_local_weights = (volume[:, None]/4).expand(-1, 4)
+        if self.numerics.discretization == 'consistent_p1':
+            self.projection_mass = self.mass
+            self.projection_diagonal = self.mass_diagonal
+        else:
+            consistent = volume[:, None, None]/20*(X.new_ones((4, 4))+torch.eye(
+                4, dtype=X.dtype, device=X.device))
+            self.projection_mass = _assemble(self.cells, consistent, len(X))
+            self.projection_diagonal = scatter(consistent.diagonal(dim1=-2, dim2=-1))
+
+    def _system(self, dt_s):
+        if dt_s not in self._systems:
+            p = self.parameters
+            alpha = p.surface_to_volume_per_cm*p.capacitance_uf_per_cm2/dt_s
+            matrix = (self.stiffness.to_sparse_coo()+
+                      alpha*self.mass.to_sparse_coo()).coalesce().to_sparse_csr()
+            backend = None
+            if self.numerics.backend == 'amgx_pcg_amg':
+                from .amgx import AmgXPCG
+                backend = AmgXPCG(matrix, self.solver_options)
+            self._systems[dt_s] = (alpha, matrix, backend)
+        return self._systems[dt_s]
+
+    def prepare(self, dt_s):
+        """Build a fixed matrix and AMG hierarchy outside the first EP step."""
+        if not isfinite(dt_s) or dt_s <= 0:
+            raise ValueError('EP dt must be positive seconds')
+        self._system(dt_s)
+
+    def close(self):
+        for _, _, backend in self._systems.values():
+            if backend is not None:
+                backend.close()
+        self._systems.clear()
 
     def _field(self, value, name):
         if (value.shape != (len(self.X),) or value.dtype != self.X.dtype
@@ -96,10 +147,12 @@ class Monodomain:
                             (stimulus_ua_per_cm2, 'stimulus')):
             self._field(value, name)
         p = self.parameters
-        alpha = p.surface_to_volume_per_cm*p.capacitance_uf_per_cm2/dt_s
-        rhs = self._mv(self.mass, alpha*voltage_v+
-                       p.surface_to_volume_per_cm*(stimulus_ua_per_cm2-ionic_ua_per_cm2))
-        action = lambda v: alpha*self._mv(self.mass, v)+self._mv(self.stiffness, v)
+        alpha, matrix, backend = self._system(dt_s)
+        source = alpha*voltage_v+p.surface_to_volume_per_cm*(stimulus_ua_per_cm2-ionic_ua_per_cm2)
+        rhs = self.mass_diagonal*source if self.numerics.discretization == 'nodal_p1' else self._mv(self.mass, source)
+        if backend is not None:
+            return backend.solve(rhs, initial=voltage_v)
+        action = lambda v: self._mv(matrix, v)
         return pcg(action, rhs, alpha*self.mass_diagonal+self.stiffness_diagonal,
                    initial=voltage_v, options=self.solver_options)
 
@@ -109,7 +162,7 @@ class Monodomain:
         if (cell_value.shape != (len(self.cells),) or cell_value.device != self.X.device
                 or cell_value.dtype != self.X.dtype or not torch.isfinite(cell_value).all()):
             raise ValueError('finite scalar value per cell required')
-        local = cell_value[:, None]*torch.einsum('eq,qa->ea', self.geometry.weights, self.geometry.values)
+        local = cell_value[:, None]*self.projection_local_weights
         rhs = self.X.new_zeros(len(self.X)).index_add(0, self.cells.reshape(-1), local.reshape(-1))
-        return pcg(lambda v: self._mv(self.mass, v), rhs, self.mass_diagonal,
+        return pcg(lambda v: self._mv(self.projection_mass, v), rhs, self.projection_diagonal,
                    options=self.solver_options)[0]

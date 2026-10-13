@@ -3,7 +3,9 @@
 AFSEI：电–流固三场耦合（electrophysiology–fluid–solid interaction）。
 
 当前主线采用原 AFSI_GPU 的规则 MAC 网格与 BE–BE 隐式流固求解器，入口为 `scripts/run_afsei.py`。
-EP 单域 PDE 使用 PyTorch GPU，GPB/Land 使用 CUDA；主动张力取代原自定义波形。
+EP 默认使用四面体 P1 顶点积分与集中质量，PyTorch 装配、AmgX PCG-AMG GPU 求解；
+GPB/Land 使用 CUDA，主动张力取代原自定义波形。配置、安装及实测见
+[EP 顶点积分与 AmgX](docs/EP_NODAL_AMGX.md)。旧一致质量/Jacobi 后端可显式选择。
 默认配置恢复为原真实 LV 的 128³、13 cm 外箱及已有求解器优化，保留源电–力材料、基底和方向映射。
 直接新建运行从未预加载的参考几何开始，也可通过下述 MAC 预加载入口初始化。
 第二十五阶段完成压力配对预加载后的主动收缩与原生实际出口流量/RCR 短程验证。

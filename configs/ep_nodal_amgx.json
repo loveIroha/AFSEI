@@ -1,0 +1,11 @@
+{
+  "discretization": "nodal_p1",
+  "backend": "amgx_pcg_amg",
+  "solver": {
+    "rtol": 1e-10,
+    "atol": 1e-13,
+    "max_iterations": 1000,
+    "recompute_every": 40,
+    "check_every": 5
+  }
+}

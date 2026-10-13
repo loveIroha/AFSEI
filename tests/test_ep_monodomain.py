@@ -2,6 +2,7 @@ import pytest
 import torch
 from afsi_torch.ep import Monodomain, MonodomainParameters
 from afsi_torch.fluid.solvers import SolverOptions
+from afsi_torch.ep.numerics import MonodomainNumerics
 
 
 @pytest.fixture(params=['cpu', 'cuda'])
@@ -18,7 +19,7 @@ def mesh(request):
 
 def test_exact_mass_stiffness_and_dense_independent_solution(mesh):
     X,cells,f,s = mesh
-    p = Monodomain(X,cells,f,s,solver_options=SolverOptions(rtol=1e-13,atol=1e-14))
+    p = Monodomain(X,cells,f,s,numerics=MonodomainNumerics.legacy(),solver_options=SolverOptions(rtol=1e-13,atol=1e-14))
     # Independent affine-tetrahedron reference, without production FE tables.
     M = torch.zeros((5,5),dtype=X.dtype)
     K = torch.zeros_like(M)
@@ -46,7 +47,7 @@ def test_exact_mass_stiffness_and_dense_independent_solution(mesh):
 
 def test_insulating_conservation_and_uniform_current_units(mesh):
     X,cells,f,s = mesh
-    p = Monodomain(X,cells,f,s,solver_options=SolverOptions(rtol=1e-13,atol=1e-14))
+    p = Monodomain(X,cells,f,s,numerics=MonodomainNumerics.legacy(),solver_options=SolverOptions(rtol=1e-13,atol=1e-14))
     v = X.new_full((5,),-.081)
     result,_ = p.step(v,v.new_full(v.shape,2),v.new_full(v.shape,25),5e-5)
     torch.testing.assert_close(result,v+5e-5*(25-2),rtol=1e-11,atol=1e-13)
@@ -64,7 +65,7 @@ def test_insulating_conservation_and_uniform_current_units(mesh):
 def test_nodal_directions_remain_spatially_variable(mesh):
     X,cells,f,s = mesh
     f = f.clone(); f[:,0] = 1+X[:,1]*.2
-    p = Monodomain(X,cells,f,s)
+    p = Monodomain(X,cells,f,s,numerics=MonodomainNumerics.legacy())
     # f=(1+.2*y,0,0), n=(0,0,1+.2*y): integrate exact y/y^2 moments.
     gradients = p.geometry.gradients[:,0].cpu()
     ref = torch.zeros((5,5),dtype=X.dtype)
@@ -84,7 +85,7 @@ def test_invalid_setup_and_nonconvergence(mesh):
     with pytest.raises(ValueError): Monodomain(X,cells,f,s,directions='ambiguous')
     with pytest.raises(ValueError): Monodomain(X,cells,f,f)
     with pytest.raises(ValueError): MonodomainParameters(conductivity_us_per_cm=(0.,.1,.1))
-    p = Monodomain(X,cells,f,s,solver_options=SolverOptions(rtol=1e-15,atol=1e-18,max_iterations=1))
+    p = Monodomain(X,cells,f,s,numerics=MonodomainNumerics.legacy(),solver_options=SolverOptions(rtol=1e-15,atol=1e-18,max_iterations=1))
     z = X.new_zeros(5)
     with pytest.raises(RuntimeError,match='did not converge'):
         p.step(X[:,0]-.08,z,X[:,2],.1)

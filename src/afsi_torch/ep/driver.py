@@ -79,12 +79,17 @@ class AFSEIStepper:
             prescribed_pressure_mmhg=config.prescribed_endocardial_pressure_mmhg)
         if config.direction_mapping == 'source-serial-cg1':
             fiber,sheet,self.stimulus_mask,self.mapping_owner = source_p1_fields(mesh)
-            self.ep = Monodomain(mesh.X,mesh.cells,fiber,sheet,directions='nodal',parameters=config.ep)
+            self.ep = Monodomain(mesh.X,mesh.cells,fiber,sheet,directions='nodal',parameters=config.ep,
+                                 numerics=config.ep_numerics)
         else:
-            self.ep = Monodomain(mesh.X,mesh.cells,mesh.fiber,mesh.sheet,directions='cell',parameters=config.ep)
+            self.ep = Monodomain(mesh.X,mesh.cells,mesh.fiber,mesh.sheet,directions='cell',parameters=config.ep,
+                                 numerics=config.ep_numerics)
             self.stimulus_mask = torch.zeros(n,dtype=torch.bool,device=mesh.X.device)
             self.stimulus_mask[torch.unique(self.model.endo_faces)] = True
             self.mapping_owner = None
+        # Fail at initialization if the explicitly selected backend is missing;
+        # never treat dependency/setup errors as physical step-size retries.
+        self.ep.prepare(config.protocol.dt_ep_s)
         self.ode = GPBLand(config.protocol.dt_ep_s,config.dt_ode_ms)
         resting = initial_state(mesh.X[:,0])
         self.rest_voltage = resting.voltage_v
@@ -240,6 +245,7 @@ class AFSEIStepper:
                 cycle = CycleState(mode='land',resting_land=resting_land)
             new = CoupledState(end,fsi,tissue,strain,cycle,load,current,old.rejected_attempts)
             info['ep'] = dict(steps=ep_steps,ode_substeps=ep_steps*self.ode.substeps,
+                discretization=self.ep.numerics.discretization,backend=self.ep.numerics.backend,
                 pcg_iterations=ep_iterations,max_residual_to_tolerance=max_ratio,
                 land_advanced=live and old.cycle.mode == 'land',ep_live=live,recovery=recovery)
             info['accepted_dt_s'] = dt

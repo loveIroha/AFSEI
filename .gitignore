@@ -12,6 +12,10 @@ requirements-local-*.txt
 
 # AFSEI machine-local files
 .cache/
+.deps/
+.amgx_prepare.py
+.ep_nodal_base.tar
+.ep_changes.tar
 .conda-env/
 .env
 .env.*

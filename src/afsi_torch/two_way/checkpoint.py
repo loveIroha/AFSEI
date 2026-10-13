@@ -13,7 +13,7 @@ from ..ep.driver import CoupledState,StrainHistory
 from ..ep.tissue import TissueState
 from ..ep.protocol import CycleState
 from ..ep.buffered_load import ActiveLoadState
-from ..ep.config import AFSEIConfig
+from ..ep.config import AFSEIConfig, decode_checkpoint_config
 from ..config import _decode
 from ..mesh_io import ImportedSolidMesh
 from ..moving_cavity.geometry import MovingCavityMesh
@@ -102,7 +102,7 @@ def load(path,device='cuda'):
         solid=ImportedSolidMesh(*(t('mesh__'+n) for n in MESH),meta['vertex_count'],meta['mesh_metadata'])
         mapping=torch.sparse_coo_tensor(t('blood_mesh__map_indices'),t('blood_mesh__map_values'),tuple(meta['map_shape']),check_invariants=True).coalesce().to_sparse_csr()
         blood_mesh=MovingCavityMesh(mapping,*(t('blood_mesh__'+n) for n in BLOOD_MESH),meta['blood_mesh_metadata'])
-        d=ThreeFieldStepper(solid,_decode(AFSEIConfig,meta['ep_config']),blood_mesh,_decode(ALEConfig,meta['blood_config']),MechanicalConfig(**meta['mechanical_config']))
+        d=ThreeFieldStepper(solid,decode_checkpoint_config(meta['ep_config']),blood_mesh,_decode(ALEConfig,meta['blood_config']),MechanicalConfig(**meta['mechanical_config']))
         s=SolidState(meta['step'],meta['time'],*(t('solid__'+n) for n in SOLID),meta['force_time'],meta['pressure_time'],opt('solid__previous_x'),meta['previous_dt'])
         e=CoupledState(meta['tick'],s,TissueState(*(t('ep__'+n) for n in ('voltage_v','gpb','land'))),
             StrainHistory(*(t('ep__'+n) for n in ('stretch','zs','zw'))),

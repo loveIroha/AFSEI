@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 import torch
 from . import checkpoint as base
-from .config import AFSEIConfig
+from .config import AFSEIConfig, decode_checkpoint_config
 from .driver import CoupledState, StrainHistory
 from .tissue import TissueState
 from .protocol import CycleState
@@ -82,7 +82,7 @@ def load(path,device='cuda',*,cardiac=False):
         tensor = lambda n: torch.as_tensor(data[n],device=device)
         optional = lambda n: tensor(n) if n in data else None
         mesh = ImportedSolidMesh(*(tensor(n) for n in base.MESH),meta['vertex_count'],meta['mesh_metadata'])
-        cfg = _decode(AFSEIConfig,meta['config']); settings = meta['balanced_execution']
+        cfg = decode_checkpoint_config(meta['config']); settings = meta['balanced_execution']
         if settings.get('volume_transfer') != 'integrated-p1-gradient-v1':
             raise ValueError('checkpoint uses a different volume transfer discretization')
         if cardiac: extra=meta['cardiac_execution']

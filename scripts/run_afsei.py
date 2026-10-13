@@ -6,6 +6,7 @@ from pathlib import Path
 from afsi_torch.config import TimeConfig,load_config
 from afsi_torch.paper_lv import PaperLVConfig
 from afsi_torch.ep.config import AFSEIConfig
+from afsi_torch.ep.numerics import MonodomainNumerics
 from afsi_torch.simulation.afsei import run
 
 
@@ -20,12 +21,18 @@ def parse_args(argv=None):
     p.add_argument('--mechanical-dt-ms',type=float)
     p.add_argument('--nonlinear-solver',choices=('jfnk','newton','anderson-newton'))
     p.add_argument('--profile',action='store_true',help='synchronize GPU for per-stage timing; includes cold starts and retries')
+    p.add_argument('--ep-discretization',choices=('nodal_p1','consistent_p1'))
+    p.add_argument('--ep-backend',choices=('amgx_pcg_amg','torch_pcg_jacobi'))
+    p.add_argument('--ep-config',type=Path)
     p.add_argument('--start-ms',type=float,default=500.)
     p.add_argument('--mechanics',choices=('source','inherited'),default='source',
                    help='fresh runs: source EP-project parameters or inherited AFSI parameters; resume restores saved parameters')
     args = p.parse_args(argv)
+    if args.ep_config and (args.ep_discretization or args.ep_backend):
+        p.error('select --ep-config or individual EP overrides')
     if args.resume and any(value is not None for value in
-            (args.fsi_config,args.source_dir,args.fluid_shape,args.mechanical_dt_ms,args.nonlinear_solver)):
+            (args.fsi_config,args.source_dir,args.fluid_shape,args.mechanical_dt_ms,args.nonlinear_solver,
+             args.ep_config,args.ep_discretization,args.ep_backend)):
         p.error('resume restores the saved MAC solver configuration; fresh-run overrides cannot be used')
     return args
 
@@ -39,7 +46,9 @@ def fresh_config(args):
     if args.fluid_shape is not None: fsi = replace(fsi,fluid=replace(fsi.fluid,shape=(args.fluid_shape,)*3))
     if args.nonlinear_solver is not None: fsi = replace(fsi,nonlinear_solver=args.nonlinear_solver)
     factory = AFSEIConfig.source if args.mechanics == 'source' else AFSEIConfig
-    return factory(fsi=fsi,start_time_s=args.start_ms/1000)
+    return factory(fsi=fsi,start_time_s=args.start_ms/1000,
+        ep_numerics=load_config(args.ep_config,MonodomainNumerics) if args.ep_config else
+            MonodomainNumerics(args.ep_discretization or 'nodal_p1',args.ep_backend or 'amgx_pcg_amg'))
 
 
 def main():
@@ -49,6 +58,7 @@ def main():
                  profile=args.profile)
     print(json.dumps({k:report[k] for k in ('status','accepted_steps','reached_time_s','ep_steps',
         'ode_substeps','rejected_attempts','elapsed_seconds','fluid_shape','direction_mapping',
+        'ep_discretization','ep_backend',
         'fluid_discretization','fsi_solver','performance','mechanics_profile',
         'source_mechanics_parameters_aligned','ep_fsi_time_integration_implemented',
         'preload_performed','prescribed_endocardial_pressure_mmhg',
