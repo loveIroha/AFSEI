@@ -106,7 +106,10 @@ class _API:
 
 
 class AmgXPCG:
-    def __init__(self, matrix, options):
+    def __init__(self, matrix, options, *, profile='size2'):
+        if profile not in ('size2','size4','size8','size8_two_level'):
+            raise ValueError('unsupported AmgX profile')
+        self.profile=profile
         if matrix.layout != torch.sparse_csr or not matrix.is_cuda or matrix.dtype != torch.float64:
             raise ValueError('AmgX EP requires a CUDA FP64 CSR matrix')
         self.matrix, self.options = matrix, options
@@ -116,6 +119,9 @@ class AmgXPCG:
         self.solve_count = 0
         global _api
         with torch.cuda.device(self.device):
+            # One-time allocator ownership boundary: AmgX cudaMalloc cannot
+            # reclaim PyTorch's inactive assembly cache. Live tensors stay owned.
+            torch.cuda.empty_cache()
             if _api is None:
                 _api = _API()
             self.api = _api
@@ -136,7 +142,7 @@ class AmgXPCG:
                     max_iters=options.max_iterations, monitor_residual=1,
                     print_solve_stats=0, store_res_history=0,
                     preconditioner=dict(solver='AMG', scope='amg',
-                        algorithm='AGGREGATION', selector='SIZE_2', interpolator='D2',
+                        algorithm='AGGREGATION', selector='SIZE_'+profile[4], interpolator='D2',
                         cycle='V', max_iters=1, max_levels=20, min_coarse_rows=32,
                         presweeps=1, postsweeps=1,
                         coarse_solver='DENSE_LU_SOLVER', monitor_residual=0,
@@ -144,6 +150,11 @@ class AmgXPCG:
                         smoother=dict(solver='BLOCK_JACOBI', scope='jacobi',
                             relaxation_factor=.5, monitor_residual=0,
                             print_solve_stats=0))))
+            if profile=='size8_two_level':
+                preconditioner=cfg['solver']['preconditioner']
+                preconditioner['max_levels']=2
+                preconditioner['coarse_solver']=dict(solver='BLOCK_JACOBI',scope='coarse',
+                    max_iters=4,relaxation_factor=.5,monitor_residual=0,print_solve_stats=0)
             try:
                 configuration = json.dumps(cfg).encode()
                 self.config = self._create('config', configuration)

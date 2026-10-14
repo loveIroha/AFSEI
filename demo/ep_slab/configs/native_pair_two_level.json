@@ -1,0 +1,29 @@
+{
+  "demo": "ep-native-pair-benchmark",
+  "schema_version": 1,
+  "time_scheme": "crank_nicolson",
+  "torchcor_source_dir": ".deps/torchcor-b02daee87d4283888981cbfc3a6b00f57789a820",
+  "source_results_root": "results/ep_slab_cell_models_20261013",
+  "pilot_case": "reference_h0.25_gpb",
+  "amg_profiles": [
+    "size8_two_level"
+  ],
+  "cases": [
+    "reference_h0.5_gpb",
+    "reference_h0.25_gpb",
+    "reference_h0.125_gpb"
+  ],
+  "snapshot_times_ms": [
+    0,
+    2,
+    10,
+    20,
+    40
+  ],
+  "warmup_rounds": 2,
+  "rounds_per_repeat": 5,
+  "repeats": 3,
+  "rtol": 1e-10,
+  "atol": 1e-13,
+  "max_iterations": 2000
+}

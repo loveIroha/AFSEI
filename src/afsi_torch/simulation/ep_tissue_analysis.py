@@ -129,6 +129,7 @@ def _cell_signature(config):
     data=json.loads(json.dumps(config))
     data['domain'].setdefault('axis_spacing_cm',None)
     data['ep_numerics'].setdefault('time_scheme','backward_euler')
+    data['ep_numerics'].setdefault('amg_profile','size2')
     for key in ('demo','case_name','reference','output','cell_model'):
         data.pop(key,None)
     return data

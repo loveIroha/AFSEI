@@ -10,6 +10,7 @@ class MonodomainNumerics:
     solver: SolverOptions = field(default_factory=lambda: SolverOptions(
         rtol=1e-10, atol=1e-13, check_every=5))
     time_scheme: str = 'crank_nicolson'
+    amg_profile: str = 'size2'
 
     def __post_init__(self):
         if self.discretization not in ('nodal_p1', 'consistent_p1'):
@@ -20,6 +21,8 @@ class MonodomainNumerics:
             raise ValueError('EP solver settings must be SolverOptions')
         if self.time_scheme not in ('backward_euler','crank_nicolson'):
             raise ValueError('EP time_scheme must be backward_euler or crank_nicolson')
+        if self.amg_profile not in ('size2','size4','size8','size8_two_level'):
+            raise ValueError('unsupported EP amg_profile')
 
     @property
     def theta(self):

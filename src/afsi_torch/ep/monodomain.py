@@ -51,7 +51,9 @@ class Monodomain:
             raise ValueError('directions must be nodal or cell')
         self.numerics = numerics or MonodomainNumerics()
         self.geometry = prepare_p1(X, cells,
-            degree=5 if self.numerics.discretization == 'consistent_p1' else 2)
+            # Affine tetrahedral volume/gradient need one geometry point. The
+            # nodal PDE still evaluates its tensor and mass at all FOUR vertices.
+            degree=5 if self.numerics.discretization == 'consistent_p1' else 1)
         self.X = X.detach().clone()
         self.cells = self.geometry.cells
         self.parameters = parameters or MonodomainParameters()
@@ -82,10 +84,15 @@ class Monodomain:
         gradients = self.geometry.gradients[:, 0]
         local_mass = torch.einsum('eq,qa,qb->eab', weights, N, N)
         local_stiffness = torch.einsum('eq,eaI,eqIJ,ebJ->eab', weights, gradients, D, gradients)
-        self.stiffness = _assemble(self.cells, local_stiffness, len(X))
         scatter = lambda local: X.new_zeros(len(X)).index_add(0, self.cells.reshape(-1), local.reshape(-1))
         self.mass_diagonal = scatter(local_mass.diagonal(dim1=-2, dim2=-1))
         self.stiffness_diagonal = scatter(local_stiffness.diagonal(dim1=-2, dim2=-1))
+        # Release quadrature work before the large global COO/coalesce peak.
+        del f,s,n,D,N,weights
+        if self.numerics.discretization=='nodal_p1':
+            del local_mass
+        self.stiffness = _assemble(self.cells, local_stiffness, len(X))
+        del local_stiffness
         if self.numerics.discretization == 'nodal_p1':
             indices = torch.arange(len(X), device=X.device)
             self.mass = torch.sparse_coo_tensor(torch.stack((indices, indices)),
@@ -116,7 +123,7 @@ class Monodomain:
             backend = None
             if self.numerics.backend == 'amgx_pcg_amg':
                 from .amgx import AmgXPCG
-                backend = AmgXPCG(matrix, self.solver_options)
+                backend = AmgXPCG(matrix, self.solver_options,profile=self.numerics.amg_profile)
             self._systems[dt_s] = (alpha, matrix, backend)
         return self._systems[dt_s]
 

@@ -10,7 +10,8 @@ ENTRIES={'ideal-lv-mac':'ideal_lv_fsi/run_mac.py',
          'real-lv':'real_lv_fsi/run_mac.py',
          'ep-slab':'ep_slab/run.py',
          'ep-slab-model-comparison':'ep_slab/run_model_comparison.py',
-         'ep-pde-methods-benchmark':'ep_slab/benchmark_pde_methods.py'}
+         'ep-pde-methods-benchmark':'ep_slab/benchmark_pde_methods.py',
+         'ep-native-pair-benchmark':'ep_slab/benchmark_native_pair.py'}
 
 def main(argv=None):
     p=argparse.ArgumentParser(description=__doc__)

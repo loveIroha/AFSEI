@@ -9,6 +9,9 @@ AFSEI：电–流固三场耦合（electrophysiology–fluid–solid interaction
 nodal FEM/AmgX 与 GPB 求解器：
 `python demo/run.py demo/ep_slab/configs/santiago_gpb.json`。
 
+同一基准上的 [TorchCor 原生 PDE 与 nodal FEM＋AMG 耗时比较](demo/ep_slab/NATIVE_PDE_COMPARISON.md)
+使用 CN、共同真残差条件和三档网格，仅测量 PDE。实测同时保留加速与未加速的结果。
+
 当前主线采用原 AFSI_GPU 的规则 MAC 网格与 BE–BE 隐式流固求解器，入口为 `scripts/run_afsei.py`。
 EP 新运行默认使用四面体 P1 顶点积分、集中质量和 CN 扩散时间推进，
 PyTorch 装配、AmgX PCG-AMG GPU 求解；旧检查点保留原 BE 时间格式。
