@@ -8,6 +8,7 @@
 - TorchCor：版本 `b02daee87d4283888981cbfc3a6b00f57789a820` 的原生 P1 一致质量组装、原生 Jacobi 预条件／TorchScript CG 与未经改写的电学步骤。通过已有哈希校验和 AST 提取适配排除 ODE/NVML/输出，没有把 AFSEI 的逐步检查附加到基线上。
 
 这次的 AFSEI 轻量循环没有调用或复制 TorchCor CG；先前四组消融中的 `nodal_torchcor_jacobi` 则使用 TorchCor 内核。因此之前 0.125 mm 的 2.378 ms 不能直接当作当前 AFSEI 自身后端的性能。
+控制内核及 PDE 包装相同的三档同图见 [相同求解器的空间离散比较](SAME_SOLVER_PDE_COMPARISON.md)，它复用先前完整测量，三档均更快。
 
 轻量后端以 `ep_numerics.backend="torch_pcg_jacobi_light"` 显式选择，旧通用 `torch_pcg_jacobi` 和 AMG 后端仍可使用。生产默认后端没有更换。轻量后端每次迭代检查停机；本次 JSON 明确设 `check_every=1`。Jacobi 对角、系统矩阵和求解器对象按 EP 步长缓存，输入电位不被就地覆盖。
 

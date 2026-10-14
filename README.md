@@ -13,6 +13,7 @@ nodal FEM/AmgX 与 GPB 求解器：
 使用 CN、共同真残差条件和三档网格，仅测量 PDE。实测同时保留加速与未加速的结果。
 另有 [独立轻量 Jacobi-PCG 与原生 TorchCor 的三档对照](demo/ep_slab/NATIVE_JACOBI_COMPARISON.md)，
 可显式选择 `torch_pcg_jacobi_light` 后端，包含同批计时及验证。
+若要控制求解内核和上层计时接口，见 [相同 Jacobi-PCG 下的标准／nodal P1 三档比较](demo/ep_slab/SAME_SOLVER_PDE_COMPARISON.md)。
 
 当前主线采用原 AFSI_GPU 的规则 MAC 网格与 BE–BE 隐式流固求解器，入口为 `scripts/run_afsei.py`。
 EP 新运行默认使用四面体 P1 顶点积分、集中质量和 CN 扩散时间推进，
