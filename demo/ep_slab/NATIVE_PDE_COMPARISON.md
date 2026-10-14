@@ -1,6 +1,6 @@
 # TorchCor 原生 PDE 与 AFSEI nodal FEM＋AMG 的比较
 
-本实验只比较两个完整 PDE 步骤：TorchCor 原生 P1-Galerkin／Jacobi-CG，以及 AFSEI 的 PyTorch nodal P1／AmgX PCG-AMG。两者均使用 CN。没有把 nodal FEM 接入 TorchCor 作为本实验的比较对象。
+主实验比较两个完整 PDE 步骤：TorchCor 原生 P1-Galerkin／Jacobi-CG，以及 AFSEI 的 PyTorch nodal P1／AmgX PCG-AMG。两者均使用 CN。另附此前已完成的 0.125 mm nodal＋轻量 Jacobi-PCG 消融结果，保持各批次及接口来源可辨认。
 
 在 RTX 4090 上，采用明确配置的两层 AMG 时，AFSEI 在 0.5、0.25 mm 网格上分别达到约 2.28、1.72 倍加速；在 0.125 mm 上耗时反而约为 TorchCor 的 1.60 倍。因此结果支持前两档的效率提升，不能据此声称所有网格尺度上都更快。实验仅包含这三档网格。
 
@@ -48,6 +48,32 @@ TorchCor 使用 mV/ms，AFSEI 使用 V/s；导电矩阵、源项和残差按照�
 这两批实验各自是交替顺序的配对比较；基线耗时在批次之间有变化，不能把跨批次差值全部解释为某一配置的优化收益。特别是 0.5 mm 基线批次变化较大，应以每批内部的配对结果解释。
 
 两层配置减少了 AMG 的层级工作，但最细一档仍较慢；其 PCG 次数虽然少于原生 CG，每次 AMG 迭代的成本却更高。CN 此步长下也不能假定原生 CG 迭代数随网格细化必然增长。本次没有计入迭代内部逐核计时，不能把差额精确归因于某个 CUDA 内核。
+
+## 0.125 mm：补充轻量 Jacobi-PCG
+
+复用 [此前 CN 四组消融](PDE_METHODS_CN_BENCHMARK.md) 的已完成数据，补入最细网格的轻量 Jacobi-PCG。它使用 nodal 集中质量方程与 TorchCor 的 TorchScript Jacobi-PCG 内核，不是标准 Galerkin，也不是已切换后的 AFSEI 生产后端。
+
+| 同一批此前消融 | PDE，ms/步 | 平均迭代次数 |
+|---|---:|---:|
+| 标准 P1 一致质量＋Jacobi-PCG | 2.5754 | 12.2 |
+| nodal P1＋轻量 Jacobi-PCG | **2.3780** | 11.4 |
+| nodal P1＋当时 SIZE_2 AMG | 5.9038 | 8.4 |
+
+在该批实验内，nodal＋轻量 Jacobi-PCG 相较标准 P1 耗时降低约 7.7%（1.083 倍加速），相较当时的 nodal＋AMG 为约 2.483 倍加速。它们满足共同真残差条件；同一 nodal 方程的两个求解器输出差异不超过 5.0×10⁻⁸ mV。
+
+补充图 `finest_pde_comparison.png/pdf` 分为三个面板：此前消融、原生 full AMG 配对、原生 two-level AMG 配对。后两个面板复用上文的 0.125 mm 数据，分别为 2.5057／5.5261 ms、2.4488／3.9184 ms。原生配对执行原始电学语句；此前消融在共同 PDE 包装下调用 TorchCor CG，接口不同。因此不把旧 Jacobi-PCG 数据插入新的原生配对统计，也不据跨批次时间之比宣称严格加速。
+
+服务器补充图与溯源摘要位于 `/mnt/large2/gjh/AFSEI/results/ep_pde_finest_summary_20261014`。生成器只读取已有报告，执行零次 PDE／ODE 求解：
+
+```bash
+python demo/ep_slab/plot_finest_pde_comparison.py \
+  --cn-report results/ep_pde_methods_cn_20261014/report.json \
+  --full-report results/ep_native_pair_20261014/report.json \
+  --two-level-report results/ep_native_pair_two_level_20261014/report.json \
+  --output results/ep_pde_finest_summary_20261014
+```
+
+此结果支持在当前算例上进一步采用轻量 GPU Jacobi-PCG；没有修改现有 PDE 后端或 CN 格式，也没有增加网格档位。
 
 ## 实现与验证
 
