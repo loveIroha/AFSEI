@@ -2,6 +2,13 @@
 
 AFSEI：电–流固三场耦合（electrophysiology–fluid–solid interaction）。
 
+[二维电激活直管 demo](demo/active_tube_2d/README.md) 使用三角形 nodal EP、
+GPB/Land、Neo-Hookean 可动管壁、双压力开口和原二维 MAC 多重网格 FSI。
+上下壁配对主动力表示省略的环向肌肉，采用明确的静息张力增量参考。
+运行：`python demo/run.py demo/active_tube_2d/configs/tube_gpu.json`。
+这是原二维显式滞后路径；三维 LV 隐式主线保持原样。
+[实际 GPU 验证与对照](demo/active_tube_2d/VALIDATION.md) 包括 100 ms 三场运行及无刺激对照。
+
 独立的固定组织 EP 传播实验见 [Santiago 图 6 / GPB demo](demo/ep_slab/README.md)。
 统一外部条件的 [GPB / 原始 ORd 传播对照](demo/ep_slab/CELL_MODEL_COMPARISON.md)
 提供三维角部刺激、时间/空间细化和平面波控制；使用已有 nodal FEM + AmgX。

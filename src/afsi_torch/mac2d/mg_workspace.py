@@ -8,18 +8,21 @@ from ..mac.graph_capture import capture_initialization
 class TensorKernels:
     name='buffered-channel'
 
+    def __init__(self,pressure_inlet=False):
+        self.pressure_inlet=pressure_inlet
+
     def smooth(self,p,rhs,diagonal,out,spacing):
-        out.copy_(p+(2/3)*(rhs-negative_laplacian(p,spacing))/diagonal)
+        out.copy_(p+(2/3)*(rhs-negative_laplacian(p,spacing,self.pressure_inlet))/diagonal)
 
     def residual(self,p,rhs,out,spacing):
-        out.copy_(rhs-negative_laplacian(p,spacing))
+        out.copy_(rhs-negative_laplacian(p,spacing,self.pressure_inlet))
 
     def residual_restrict(self,p,rhs,out,spacing):
-        residual=rhs-negative_laplacian(p,spacing)
+        residual=rhs-negative_laplacian(p,spacing,self.pressure_inlet)
         out.copy_(F.avg_pool2d(residual[None,None],2,2)[0,0])
 
     def prolong_add(self,coarse,fine):
-        padded=torch.cat((coarse[:1],coarse,-coarse[-1:]),0)
+        padded=torch.cat((-coarse[:1] if self.pressure_inlet else coarse[:1],coarse,-coarse[-1:]),0)
         padded=torch.cat((padded[:,:1],padded,padded[:,-1:]),1)
         fine.add_(F.interpolate(padded[None,None],scale_factor=2,mode='bilinear',
                                align_corners=False)[0,0,2:-2,2:-2])
@@ -28,8 +31,13 @@ class TensorKernels:
 class ChannelWorkspace:
     def __init__(self,solver,*,fused=True,graphs=False):
         sample=solver.diagonals[0]
-        self.kernels=TensorKernels()
-        if fused and sample.is_cuda:
+        self.kernels=TensorKernels(solver.pressure_inlet)
+        if fused and sample.is_cuda and solver.pressure_inlet:
+            from ..mac.execution import tensor_kernel
+            for name in ('smooth','residual','residual_restrict','prolong_add'):
+                setattr(self.kernels,name,tensor_kernel(getattr(self.kernels,name),sample.device))
+            self.kernels.name='compiled-pressure-channel'
+        elif fused and sample.is_cuda:
             try:
                 from ._triton_mg import TritonKernels
             except ImportError as exc:

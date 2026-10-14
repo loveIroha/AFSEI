@@ -58,7 +58,7 @@ def gradient(p,spacing):
     return gx,gy
 
 
-def negative_laplacian(p,spacing):
+def negative_laplacian(p,spacing,pressure_inlet=False):
     hx,hy=spacing
     out=torch.zeros_like(p)
     dx=(p[1:]-p[:-1])/hx**2
@@ -68,6 +68,8 @@ def negative_laplacian(p,spacing):
     out[:,:-1]-=dy
     out[:,1:]+=dy
     out[-1]+=2*p[-1]/hx**2
+    if pressure_inlet:
+        out[0]+=2*p[0]/hx**2
     return out
 
 

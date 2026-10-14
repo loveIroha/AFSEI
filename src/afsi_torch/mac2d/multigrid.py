@@ -7,17 +7,18 @@ from ..mac.execution import tensor_kernel
 from .grid import negative_laplacian
 
 
-def smooth_block(p,rhs,spacing,diagonal,iterations):
+def smooth_block(p,rhs,spacing,diagonal,iterations,pressure_inlet=False):
     for _ in range(iterations):
-        p=p+(2/3)*(rhs-negative_laplacian(p,spacing))/diagonal
+        p=p+(2/3)*(rhs-negative_laplacian(p,spacing,pressure_inlet))/diagonal
     return p
 
 
 class ChannelMultigrid:
-    def __init__(self,grid,*,device='cpu',dtype=torch.float64,options=None,fused=True,backend='reference'):
+    def __init__(self,grid,*,device='cpu',dtype=torch.float64,options=None,fused=True,backend='reference',pressure_inlet=False):
         if backend not in ('reference','workspace','graph'):
             raise ValueError('pressure backend must be reference, workspace or graph')
         self.options=options or MGOptions()
+        self.pressure_inlet=pressure_inlet
         self.shapes,self.spacings,self.diagonals=[],[],[]
         shape,spacing=grid.shape,grid.spacing
         while True:
@@ -30,6 +31,8 @@ class ChannelMultigrid:
             diag[:,:-1]+=1/hy**2
             diag[:,1:]+=1/hy**2
             diag[-1]+=2/hx**2
+            if pressure_inlet:
+                diag[0]+=2/hx**2
             self.diagonals.append(diag)
             if min(shape)<=4 or any(n%2 for n in shape):
                 break
@@ -41,14 +44,14 @@ class ChannelMultigrid:
         eye=torch.eye(count,device=device,dtype=dtype)
         # Small setup-only coarse inverse; the Dirichlet outlet removes the
         # nullspace, so neither mean subtraction nor a pressure pin is applied.
-        A=torch.stack([negative_laplacian(v.reshape(shape),spacing).reshape(-1) for v in eye],1)
+        A=torch.stack([negative_laplacian(v.reshape(shape),spacing,pressure_inlet).reshape(-1) for v in eye],1)
         self.inverse=torch.linalg.inv(A)
         self.actions=[]
         self.spacing_tensors=[]
         for h in self.spacings:
             h=self.diagonals[0].new_tensor(h)
             self.spacing_tensors.append(h)
-            action=lambda p,h=h:negative_laplacian(p,h)
+            action=lambda p,h=h:negative_laplacian(p,h,self.pressure_inlet)
             self.actions.append(tensor_kernel(action,device) if fused else action)
         self.smooth_block=tensor_kernel(smooth_block,device) if fused else smooth_block
         self.backend='compiled-2d' if fused and torch.device(device).type=='cuda' else 'torch-2d'
@@ -64,7 +67,7 @@ class ChannelMultigrid:
         return torch.stack((valid.to(rhs.dtype),torch.linalg.vector_norm(rhs),torch.linalg.vector_norm(residual)))
 
     def _smooth(self,level,p,rhs):
-        return self.smooth_block(p,rhs,self.spacing_tensors[level],self.diagonals[level],self.options.smooth)
+        return self.smooth_block(p,rhs,self.spacing_tensors[level],self.diagonals[level],self.options.smooth,self.pressure_inlet)
 
     def _cycle(self,level,p,rhs):
         if level==len(self.shapes)-1:
@@ -76,7 +79,7 @@ class ChannelMultigrid:
         # Interpolate through boundary ghosts: even at Neumann boundaries,
         # odd at p=0 outlet. Border-value clamping would violate the outlet
         # correction and leave slowly converging low-frequency errors.
-        padded=torch.cat((correction[:1],correction,-correction[-1:]),0)
+        padded=torch.cat((-correction[:1] if self.pressure_inlet else correction[:1],correction,-correction[-1:]),0)
         padded=torch.cat((padded[:,:1],padded,padded[:,-1:]),1)
         prolong=F.interpolate(padded[None,None],scale_factor=2,mode='bilinear',align_corners=False)[0,0,2:-2,2:-2]
         p=p+prolong

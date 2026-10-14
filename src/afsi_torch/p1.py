@@ -1,4 +1,4 @@
-"""P1 tetrahedra/triangular traces compatible with the existing FE/MAC API."""
+"""P1 tetrahedra, planar triangles and traces for the existing FE/MAC API."""
 from itertools import permutations
 import torch
 from .solid import P2Geometry
@@ -31,6 +31,8 @@ def tetra_rule(degree, like):
 
 
 def prepare_p1(X, cells, degree=5):
+    if X.ndim == 2 and X.shape[1] == 2:
+        return prepare_planar_p1(X, cells, degree)
     validate_mesh(X, cells, 4)
     vertices = X[cells]
     D = (vertices[:, 1:]-vertices[:, :1]).transpose(-1, -2)
@@ -44,6 +46,25 @@ def prepare_p1(X, cells, degree=5):
     # Expanded view: no duplicated gradients for a constant P1 cell gradient.
     return P2Geometry(cells.clone(), N, grad[:, None].expand(-1, len(q), -1, -1),
                       determinant3(D).abs()[:, None]*w, len(X))
+
+
+def prepare_planar_p1(X, cells, degree=5):
+    """Affine planar triangles; unit out-of-plane thickness, positive quadrature."""
+    if (X.ndim != 2 or X.shape[1] != 2 or not X.is_floating_point()
+            or not torch.isfinite(X).all() or cells.ndim != 2 or cells.shape[1] != 3
+            or cells.dtype != torch.int64 or cells.device != X.device or not cells.numel()
+            or cells.min() < 0 or cells.max() >= len(X)):
+        raise ValueError('finite planar coordinates and valid int64 triangles required')
+    vertices = X[cells]
+    D = (vertices[:, 1:]-vertices[:, :1]).transpose(-1, -2)
+    singular = torch.linalg.svdvals(D)
+    if (singular[:, -1] <= 100*torch.finfo(X.dtype).eps*singular[:, 0]).any():
+        raise ValueError('degenerate reference triangle')
+    q, w = triangle.quadrature(degree, dtype=X.dtype, device=X.device)
+    N = torch.cat((1-q.sum(-1, keepdim=True), q), -1)
+    grad = X.new_tensor([[-1., -1.], [1., 0.], [0., 1.]]) @ torch.linalg.inv(D)
+    return P2Geometry(cells.clone(), N, grad[:, None].expand(-1, len(q), -1, -1),
+                      torch.linalg.det(D).abs()[:, None]*w, len(X))
 
 
 def prepare_surface(X, faces, degree=5):

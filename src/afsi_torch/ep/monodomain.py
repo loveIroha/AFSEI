@@ -29,8 +29,9 @@ class MonodomainParameters:
 
 
 def _assemble(cells, local, size):
-    rows = cells[:, :, None].expand(-1, 4, 4)
-    cols = cells[:, None, :].expand(-1, 4, 4)
+    vertices = cells.shape[1]
+    rows = cells[:, :, None].expand(-1, vertices, vertices)
+    cols = cells[:, None, :].expand(-1, vertices, vertices)
     return torch.sparse_coo_tensor(torch.stack((rows.reshape(-1), cols.reshape(-1))),
         local.reshape(-1), (size, size), device=local.device, dtype=local.dtype,
         check_invariants=True).coalesce().to_sparse_csr()
@@ -51,23 +52,24 @@ class Monodomain:
             raise ValueError('directions must be nodal or cell')
         self.numerics = numerics or MonodomainNumerics()
         self.geometry = prepare_p1(X, cells,
-            # Affine tetrahedral volume/gradient need one geometry point. The
-            # nodal PDE still evaluates its tensor and mass at all FOUR vertices.
+            # Affine simplex volume/gradient use a low-order geometry rule.
+            # The nodal PDE evaluates tensor and mass at every simplex vertex.
             degree=5 if self.numerics.discretization == 'consistent_p1' else 1)
         self.X = X.detach().clone()
         self.cells = self.geometry.cells
         self.parameters = parameters or MonodomainParameters()
         self.solver_options = solver_options or self.numerics.solver
         self._systems = {}
+        dimension, vertices = X.shape[1], self.cells.shape[1]
         count = len(X) if directions == 'nodal' else len(cells)
         for value in (fiber, sheet):
-            if (value.shape != (count, 3) or value.dtype != X.dtype or value.device != X.device
+            if (value.shape != (count, dimension) or value.dtype != X.dtype or value.device != X.device
                     or not torch.isfinite(value).all()):
                 raise ValueError('directions must match mesh shape, dtype and device')
         volume = self.geometry.weights.sum(dim=1)
         if self.numerics.discretization == 'nodal_p1':
-            N = torch.eye(4, dtype=X.dtype, device=X.device)
-            weights = (volume[:, None]/4).expand(-1, 4)
+            N = torch.eye(vertices, dtype=X.dtype, device=X.device)
+            weights = (volume[:, None]/vertices).expand(-1, vertices)
         else:
             N, weights = self.geometry.values, self.geometry.weights
         if directions == 'nodal':
@@ -75,12 +77,15 @@ class Monodomain:
             s = torch.einsum('qa,eai->eqi', N, sheet[self.cells])
         else:
             f, s = fiber[:, None], sheet[:, None]
-        n = torch.linalg.cross(f, s)
-        if (torch.linalg.vector_norm(n, dim=-1) <= 100*torch.finfo(X.dtype).eps).any():
+        n = torch.linalg.cross(f, s) if dimension == 3 else f[..., 0]*s[..., 1]-f[..., 1]*s[..., 0]
+        cross_norm = torch.linalg.vector_norm(n, dim=-1) if dimension == 3 else n.abs()
+        if (cross_norm <= 100*torch.finfo(X.dtype).eps).any():
             raise ValueError('fiber and sheet must be nonzero and linearly independent')
         gf, gs, gn = self.parameters.conductivity_us_per_cm
         outer = lambda u: u[..., :, None]*u[..., None, :]
-        D = gf*outer(f)+gs*outer(s)+gn*outer(n)
+        D = gf*outer(f)+gs*outer(s)
+        if dimension == 3:
+            D = D+gn*outer(n)
         gradients = self.geometry.gradients[:, 0]
         local_mass = torch.einsum('eq,qa,qb->eab', weights, N, N)
         local_stiffness = torch.einsum('eq,eaI,eqIJ,ebJ->eab', weights, gradients, D, gradients)
@@ -101,16 +106,16 @@ class Monodomain:
         else:
             self.mass = _assemble(self.cells, local_mass, len(X))
         if (self.mass_diagonal <= 0).any():
-            raise ValueError('every EP node must belong to a tetrahedron')
+            raise ValueError('every EP node must belong to a simplex')
         # Land feedback retains the ORIGINAL consistent L2 projection even
         # when the PDE uses vertex quadrature. Affine P1 integrals are analytic.
-        self.projection_local_weights = (volume[:, None]/4).expand(-1, 4)
+        self.projection_local_weights = (volume[:, None]/vertices).expand(-1, vertices)
         if self.numerics.discretization == 'consistent_p1':
             self.projection_mass = self.mass
             self.projection_diagonal = self.mass_diagonal
         else:
-            consistent = volume[:, None, None]/20*(X.new_ones((4, 4))+torch.eye(
-                4, dtype=X.dtype, device=X.device))
+            consistent = volume[:, None, None]/(vertices*(vertices+1))*(X.new_ones((vertices, vertices))+torch.eye(
+                vertices, dtype=X.dtype, device=X.device))
             self.projection_mass = _assemble(self.cells, consistent, len(X))
             self.projection_diagonal = scatter(consistent.diagonal(dim1=-2, dim2=-1))
 
