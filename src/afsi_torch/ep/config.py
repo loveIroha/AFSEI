@@ -55,13 +55,16 @@ class AFSEIConfig:
 def decode_checkpoint_config(data):
     """Missing numerical settings identify the original consistent/Jacobi EP.
 
-    Fresh configs default to nodal/AmgX; a restart never silently switches
-    discretization. A fresh run from a reference checkpoint selects defaults
+    Fresh configs default to nodal/AmgX/CN; a restart never silently switches
+    discretization or time scheme. A fresh run from a reference checkpoint selects defaults
     explicitly in its entry point.
     """
     from dataclasses import asdict
     from ..config import _decode
     if not isinstance(data, dict):
         raise ValueError('checkpoint AFSEI config must be an object')
-    return _decode(AFSEIConfig, dict(data, ep_numerics=data.get(
-        'ep_numerics', asdict(MonodomainNumerics.legacy()))))
+    numerics=dict(data.get('ep_numerics',asdict(MonodomainNumerics.legacy())))
+    # All checkpoints written before time_scheme existed used backward Euler,
+    # including the later nodal/AmgX checkpoints. Do not retime a restart.
+    numerics.setdefault('time_scheme','backward_euler')
+    return _decode(AFSEIConfig,dict(data,ep_numerics=numerics))

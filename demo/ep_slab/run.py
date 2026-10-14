@@ -20,7 +20,7 @@ CONFIG=EPTissueConfig(
                              fiber=(1.,0.,0.),sheet=(0.,1.,0.)),
     parameters=MonodomainParameters(capacitance_uf_per_cm2=1.,surface_to_volume_per_cm=.1,
                                     conductivity_us_per_cm=(1.17,.39,.39)),
-    ep_numerics=MonodomainNumerics('nodal_p1','amgx_pcg_amg'),
+    ep_numerics=MonodomainNumerics('nodal_p1','amgx_pcg_amg',time_scheme='backward_euler'),
     time=EPExperimentTime(dt_ep_s=5e-5,dt_ode_ms=.002,end_time_s=.08),
     stimulus=TissueStimulus(minimum_cm=(0.,0.,0.),maximum_cm=(.15,.15,.15),
         amplitude_ua_per_cm2=50000./1400.,start_s=0.,duration_s=.002),

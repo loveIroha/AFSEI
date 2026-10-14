@@ -9,6 +9,7 @@ class MonodomainNumerics:
     backend: str = 'amgx_pcg_amg'
     solver: SolverOptions = field(default_factory=lambda: SolverOptions(
         rtol=1e-10, atol=1e-13, check_every=5))
+    time_scheme: str = 'crank_nicolson'
 
     def __post_init__(self):
         if self.discretization not in ('nodal_p1', 'consistent_p1'):
@@ -17,7 +18,13 @@ class MonodomainNumerics:
             raise ValueError('EP backend must be amgx_pcg_amg or torch_pcg_jacobi')
         if not isinstance(self.solver, SolverOptions):
             raise ValueError('EP solver settings must be SolverOptions')
+        if self.time_scheme not in ('backward_euler','crank_nicolson'):
+            raise ValueError('EP time_scheme must be backward_euler or crank_nicolson')
+
+    @property
+    def theta(self):
+        return .5 if self.time_scheme=='crank_nicolson' else 1.
 
     @classmethod
     def legacy(cls):
-        return cls(discretization='consistent_p1', backend='torch_pcg_jacobi')
+        return cls(discretization='consistent_p1', backend='torch_pcg_jacobi',time_scheme='backward_euler')

@@ -42,7 +42,8 @@ def test_vertex_rule_variable_tensor_dense_solution_and_cached_dt(mesh):
     assert torch.linalg.eigvalsh(M*2000+K).min() > 0
     V, I, S = X[:, 0]*.05-.08, X[:, 1]*3+.2, X[:, 2]*25
     for dt in (5e-5, 5e-5, 1e-4):
-        expected = torch.linalg.solve(.1/dt*M+K, M@(.1/dt*V+.1*(S-I)))
+        theta=p.numerics.theta
+        expected = torch.linalg.solve(.1/dt*M+theta*K, M@(.1/dt*V+.1*(S-I))-(1-theta)*K@V)
         actual, info = p.step(V, I, S, dt)
         torch.testing.assert_close(actual, expected, rtol=1e-11, atol=1e-13)
         assert info.residual_norm <= info.tolerance
@@ -51,7 +52,8 @@ def test_vertex_rule_variable_tensor_dense_solution_and_cached_dt(mesh):
 
 def test_nodal_conservation_units_and_unchanged_nonuniform_land_projection(mesh):
     X, cells, f, s = mesh
-    p = Monodomain(X, cells, f, s, numerics=MonodomainNumerics(backend='torch_pcg_jacobi'))
+    p = Monodomain(X, cells, f, s, numerics=MonodomainNumerics(backend='torch_pcg_jacobi'),
+                   solver_options=SolverOptions(rtol=1e-13,atol=1e-14))
     old = Monodomain(X, cells, f, s, numerics=MonodomainNumerics.legacy())
     v, z = X.new_full((len(X),), -.081), X.new_zeros(len(X))
     result, _ = p.step(v, z+2, z+25, 5e-5)
@@ -71,6 +73,11 @@ def test_new_defaults_and_legacy_restart_are_distinct():
     data = asdict(new); data.pop('ep_numerics')
     assert decode_checkpoint_config(data).ep_numerics == MonodomainNumerics.legacy()
     assert decode_checkpoint_config(asdict(new)) == new
+    data=asdict(new);data['ep_numerics'].pop('time_scheme')
+    old_nodal=decode_checkpoint_config(data)
+    assert old_nodal.ep_numerics.discretization=='nodal_p1'
+    assert old_nodal.ep_numerics.time_scheme=='backward_euler'
+    assert new.ep_numerics.time_scheme=='crank_nicolson'
     with pytest.raises(ValueError):
         MonodomainNumerics(backend='auto')
 
@@ -96,7 +103,7 @@ def test_actual_amgx_matches_same_equation_and_reuses_hierarchy(discretization):
     V, I, S = X[:,0]-.08, X[:,1]*3+.2, X[:,2]*250
     first = None
     for _ in range(3):
-        expected = torch.linalg.solve(2000*M+K, M@(2000*V+.1*(S-I)))
+        expected = torch.linalg.solve(2000*M+.5*K, M@(2000*V+.1*(S-I))-.5*K@V)
         result, info = ep.step(V, I, S, 5e-5)
         torch.testing.assert_close(result, expected, rtol=1e-9, atol=1e-12)
         assert info.residual_norm <= info.tolerance
@@ -113,7 +120,7 @@ def test_actual_amgx_matches_same_equation_and_reuses_hierarchy(discretization):
     restored.prepare(5e-5)
     ep.close()
     result, info = restored.step(V, I, S, 5e-5)
-    expected = torch.linalg.solve(2000*M+K, M@(2000*V+.1*(S-I)))
+    expected = torch.linalg.solve(2000*M+.5*K, M@(2000*V+.1*(S-I))-.5*K@V)
     torch.testing.assert_close(result, expected, rtol=1e-9, atol=1e-12)
     assert info.residual_norm <= info.tolerance
     restored.close()

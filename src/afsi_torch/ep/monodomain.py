@@ -42,6 +42,8 @@ class Monodomain:
     directions='nodal' reproduces the source PDE's P1 direction fields;
     directions='cell' explicitly uses the existing AFSI DG0 inputs instead.
     Directions are never silently normalized, averaged or converted to P1.
+    Default diffusion uses Crank-Nicolson; the supplied ionic/stimulus field is
+    the existing frozen or substep-averaged source, not an implicit reaction solve.
     """
     def __init__(self, X, cells, fiber, sheet, *, directions='nodal', parameters=None,
                  solver_options=None, numerics=None):
@@ -109,7 +111,7 @@ class Monodomain:
         if dt_s not in self._systems:
             p = self.parameters
             alpha = p.surface_to_volume_per_cm*p.capacitance_uf_per_cm2/dt_s
-            matrix = (self.stiffness.to_sparse_coo()+
+            matrix = (self.numerics.theta*self.stiffness.to_sparse_coo()+
                       alpha*self.mass.to_sparse_coo()).coalesce().to_sparse_csr()
             backend = None
             if self.numerics.backend == 'amgx_pcg_amg':
@@ -150,10 +152,12 @@ class Monodomain:
         alpha, matrix, backend = self._system(dt_s)
         source = alpha*voltage_v+p.surface_to_volume_per_cm*(stimulus_ua_per_cm2-ionic_ua_per_cm2)
         rhs = self.mass_diagonal*source if self.numerics.discretization == 'nodal_p1' else self._mv(self.mass, source)
+        if self.numerics.theta!=1.:
+            rhs=rhs-(1-self.numerics.theta)*self._mv(self.stiffness,voltage_v)
         if backend is not None:
             return backend.solve(rhs, initial=voltage_v)
         action = lambda v: self._mv(matrix, v)
-        return pcg(action, rhs, alpha*self.mass_diagonal+self.stiffness_diagonal,
+        return pcg(action, rhs, alpha*self.mass_diagonal+self.numerics.theta*self.stiffness_diagonal,
                    initial=voltage_v, options=self.solver_options)
 
     @torch.no_grad()

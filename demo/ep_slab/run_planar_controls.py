@@ -2,7 +2,7 @@
 import argparse,json,csv
 from dataclasses import asdict,replace
 from pathlib import Path
-from afsi_torch.config import load_config
+from afsi_torch.config import load_config,_decode
 from afsi_torch.cycle_checkpoint import atomic_json
 from afsi_torch.ep.experiment import EPTissueConfig
 from afsi_torch.simulation.ep_tissue import run
@@ -28,7 +28,9 @@ def main(argv=None):
                            axis_spacing_cm=(spacing/10,.1,.1)))
             destination=args.output/f'planar_h{spacing:g}_{model}'
             if (destination/'report.json').exists():
-                actual=load_config(destination/'config_resolved.json',EPTissueConfig)
+                data=json.loads((destination/'config_resolved.json').read_text());data.pop('demo',None)
+                data['ep_numerics'].setdefault('time_scheme','backward_euler')
+                actual=_decode(EPTissueConfig,data)
                 if actual!=config: raise ValueError('cached planar case has different conditions')
                 report=json.loads((destination/'report.json').read_text())
                 if report['status']!='completed': raise ValueError('cached planar case is incomplete')

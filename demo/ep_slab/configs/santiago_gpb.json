@@ -20,6 +20,7 @@
   "ep_numerics": {
     "discretization": "nodal_p1",
     "backend": "amgx_pcg_amg",
+    "time_scheme": "backward_euler",
     "solver": {
       "rtol": 1e-10,
       "atol": 1e-13,

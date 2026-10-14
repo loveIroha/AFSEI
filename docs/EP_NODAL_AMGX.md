@@ -1,7 +1,7 @@
 # EP 顶点积分与 AmgX 主线
 
 用户授权 EP 线性求解可使用 AmgX。新计算默认采用 `nodal_p1` 与
-`amgx_pcg_amg`；PyTorch 装配和时间推进，AmgX 在 GPU 内部执行 PCG，
+`amgx_pcg_amg` 与 `time_scheme=crank_nicolson`；PyTorch 装配和时间推进，AmgX 在 GPU 内部执行 PCG，
 以聚合 AMG 的固定 V-cycle 为预条件。原 `consistent_p1` 与
 `torch_pcg_jacobi` 仍可显式选择。
 
@@ -12,10 +12,16 @@
 扩散矩阵使用四个顶点处的 CG1 方向场计算电导张量，再取加权和；
 并非只把一致质量矩阵的对角提取出来。
 
-每步求解 `A V_new=b`，其中 `A=Sv*Cm/dt*M_lumped+K_vertex`。
+每步求解 `A V_new=b`，CN 的 `A=Sv*Cm/dt*M_lumped+0.5*K_vertex`，
+`b=M_lumped*(Sv*Cm/dt*V_old+Sv*(stimulus-ionic))-0.5*K_vertex*V_old`。
+显式选择 `time_scheme=backward_euler` 时保留原矩阵与右端项。
 保留绝缘边界、固定参考网格、原电导数值与单位、ODE 先行的一阶分裂、
 EP 步长 0.05 ms 和 GPB/Land 子步长 0.002 ms。
 方向没有额外归一化，电导没有新增缩放。
+CN 的二阶性质只针对扩散步；现有冻结/子步平均离子电流及一阶分裂保持原样，
+不能称整个 EP/ODE 耦合已升级为二阶。旧检查点缺少 `time_scheme` 时恢复为 BE。
+本文下方原实测数值是 BE 的历史验证；新的统一 CN PDE 耗时见
+[CN 方法对照](../demo/ep_slab/PDE_METHODS_CN_BENCHMARK.md)。
 
 Land 单元伸长至节点的反馈继续使用独立的一致 L2 投影；该投影不采用
 EP 的集中质量矩阵。MAC 流固、RCR、阶段切换和主动载荷卸载不作修改。

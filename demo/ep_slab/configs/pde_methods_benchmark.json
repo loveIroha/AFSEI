@@ -1,6 +1,7 @@
 {
   "demo": "ep-pde-methods-benchmark",
   "schema_version": 1,
+  "time_scheme": "backward_euler",
   "torchcor_commit": "b02daee87d4283888981cbfc3a6b00f57789a820",
   "torchcor_source_dir": ".deps/torchcor-b02daee87d4283888981cbfc3a6b00f57789a820",
   "source_results_root": "results/ep_slab_cell_models_20261013",

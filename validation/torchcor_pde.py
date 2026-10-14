@@ -2,7 +2,7 @@
 
 Only PDE core modules are imported: no optional ECG/visualization dependencies.
 No TorchCor source is copied or patched. External snapshots use AFSEI V/cm/s
-units and the common backward Euler equation K + Sv*Cm*M/dt.
+units and the common theta equation theta*K + Sv*Cm*M/dt.
 """
 import hashlib
 import importlib
@@ -75,14 +75,18 @@ class TorchCorCG:
 
 class PDEMethod:
     """Shared PDE source/RHS operations and input checks for the controls."""
-    def __init__(self,X,mass,mass_diagonal,A,parameters,dt,solver,*,nodal=False):
+    def __init__(self,X,mass,mass_diagonal,A,parameters,dt,solver,*,nodal=False,stiffness=None,theta=1.):
         self.X,self.mass,self.mass_diagonal,self.matrix=X,mass,mass_diagonal,A
         self.parameters,self.dt,self.solver,self.nodal=parameters,dt,solver,nodal
+        self.stiffness,self.theta=stiffness,theta
 
     def rhs(self,V,I,S):
         p=self.parameters
         source=p.surface_to_volume_per_cm*p.capacitance_uf_per_cm2/self.dt*V+p.surface_to_volume_per_cm*(S-I)
-        return self.mass_diagonal*source if self.nodal else torch.sparse.mm(self.mass,source[:,None]).flatten()
+        rhs=self.mass_diagonal*source if self.nodal else torch.sparse.mm(self.mass,source[:,None]).flatten()
+        if self.theta!=1.:
+            rhs=rhs-(1-self.theta)*torch.sparse.mm(self.stiffness,V[:,None]).flatten()
+        return rhs
 
     def step(self,V,I,S,calibration=None):
         from afsi_torch.ep import Monodomain

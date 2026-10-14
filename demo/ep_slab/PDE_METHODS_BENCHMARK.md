@@ -1,5 +1,8 @@
 # PDE 耗时：TorchCor 标准 P1-Galerkin 与 nodal FEM + AMG
 
+本文保留双方 BE 的历史实测。双方统一 CN 的新结果见
+[CN PDE 方法对照](PDE_METHODS_CN_BENCHMARK.md)。
+
 本次只比较 PDE，使用此前已经保存的三维 slab 电位快照。没有重新求解细胞
 ODE，也没有运行流固或完整 EP 传播。主性能指标为矩阵/预条件准备完成并预热后的
 单步 PDE 墙钟耗时，包含输入检查、源项/右端项计算和线性求解，排除文件输出和绘图。

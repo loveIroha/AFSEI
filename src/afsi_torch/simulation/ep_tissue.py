@@ -237,6 +237,7 @@ def run(config: EPTissueConfig, output, *, device='cuda'):
             stimulus_membrane_ua_per_cm2=config.stimulus.amplitude_ua_per_cm2,
             stimulus_volume_ua_per_cm3=config.parameters.surface_to_volume_per_cm*config.stimulus.amplitude_ua_per_cm2,
             ep_discretization=ep.numerics.discretization,ep_backend=ep.numerics.backend,
+            ep_time_scheme=ep.numerics.time_scheme,ep_diffusion_theta=ep.numerics.theta,
             linear_solver_max_residual_to_tolerance=maximum_ratio,
             linear_solver_mean_iterations=iterations/steps,amg_setup_count=backend.setup_count if backend else 0,
             voltage_range_mv=[float(v.min()*1000),float(v.max()*1000)],

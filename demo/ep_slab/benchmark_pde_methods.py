@@ -38,6 +38,8 @@ def benchmark_case(folder,settings,classes):
     if report['status']!='completed' or config.ep_numerics.discretization!='nodal_p1':
         raise ValueError('completed nodal reference snapshots required')
     dt=config.time.dt_ep_s;p=config.parameters
+    scheme=settings.get('time_scheme','backward_euler')
+    theta=.5 if scheme=='crank_nicolson' else 1.
     with np.load(folder/'mesh.npz',allow_pickle=False) as saved:
         X=torch.as_tensor(saved['coordinates_cm'],device='cuda',dtype=torch.float64)
         cells=torch.as_tensor(saved['cells'],device='cuda',dtype=torch.int64)
@@ -59,11 +61,11 @@ def benchmark_case(folder,settings,classes):
     Matrices3D=classes[0]
     (K,M),tc_assembly=synchronized_time(lambda:Matrices3D(X,cells,X.device,X.dtype).assemble_matrices(sigma))
     K,M=K.to_sparse_csr(),M.to_sparse_csr()
-    A=(K.to_sparse_coo()+alpha*M.to_sparse_coo()).coalesce().to_sparse_csr()
+    A=(theta*K.to_sparse_coo()+alpha*M.to_sparse_coo()).coalesce().to_sparse_csr()
     diag=torch.zeros(len(X),device=X.device,dtype=X.dtype)
     coo=M.to_sparse_coo();idx=coo.indices();select=idx[0]==idx[1]
     diag[idx[0,select]]=coo.values()[select]
-    numerics=MonodomainNumerics('nodal_p1','amgx_pcg_amg',options)
+    numerics=MonodomainNumerics('nodal_p1','amgx_pcg_amg',options,time_scheme=scheme)
     ep,nodal_assembly=synchronized_time(lambda:Monodomain(X,cells,f,s,parameters=p,numerics=numerics))
     _,nodal_setup=synchronized_time(lambda:ep.prepare(dt))
     stiffness_gap=max_sparse_relative_difference(ep.stiffness,K)
@@ -75,9 +77,10 @@ def benchmark_case(folder,settings,classes):
     consistent_amg,consistent_amg_setup=synchronized_time(lambda:AmgXPCG(A,options))
     nodal_matrix=ep._systems[dt][1]
     nodal_cg,nodal_cg_setup=synchronized_time(lambda:TorchCorCG(nodal_matrix,options,classes))
-    methods=[PDEMethod(X,M,diag,A,p,dt,consistent_cg),
-             PDEMethod(X,M,diag,A,p,dt,consistent_amg),
-             PDEMethod(X,ep.mass,ep.mass_diagonal,nodal_matrix,p,dt,nodal_cg,nodal=True),ep]
+    methods=[PDEMethod(X,M,diag,A,p,dt,consistent_cg,stiffness=K,theta=theta),
+             PDEMethod(X,M,diag,A,p,dt,consistent_amg,stiffness=K,theta=theta),
+             PDEMethod(X,ep.mass,ep.mass_diagonal,nodal_matrix,p,dt,nodal_cg,nodal=True,
+                       stiffness=ep.stiffness,theta=theta),ep]
     setups=[tc_setup,consistent_amg_setup,nodal_cg_setup,nodal_setup]
     zero=X.new_zeros(len(X));stim=zero.masked_fill(mask,config.stimulus.amplitude_ua_per_cm2)
     inputs=[(V,zero,stim if 0<=t<config.stimulus.duration_s*1000 else zero)
@@ -100,6 +103,7 @@ def benchmark_case(folder,settings,classes):
             if k==3:
                 source=alpha*inputs[j][0]+p.surface_to_volume_per_cm*(inputs[j][2]-inputs[j][1])
                 rhs=ep.mass_diagonal*source
+                if theta!=1.:rhs=rhs-(1-theta)*torch.sparse.mm(ep.stiffness,inputs[j][0][:,None]).flatten()
             else:rhs=method.rhs(*inputs[j])
             matrix=nodal_matrix if k>=2 else A
             tolerance=max(options.atol,options.rtol*torch.linalg.vector_norm(rhs).item())
@@ -128,7 +132,7 @@ def benchmark_case(folder,settings,classes):
                    timed_solves=len(times)*count)
               for label,times,setup,iterations,ratio in zip(LABELS,samples,setups,iteration_samples,ratios)]
     result=dict(case=folder.name,spacing_mm=config.domain.spacing_cm*10,node_count=len(X),cell_count=len(cells),
-        dt_ep_ms=dt*1000,diffusion_cm2_s=report['diffusion_cm2_s'],variants=variants,
+        dt_ep_ms=dt*1000,time_scheme=scheme,theta=theta,diffusion_cm2_s=report['diffusion_cm2_s'],variants=variants,
         warm_pde_speedup=variants[0]['mean_pde_ms']/variants[-1]['mean_pde_ms'],
         torchcor_assembly_s=tc_assembly,afsei_nodal_assembly_s=nodal_assembly,
         relative_stiffness_difference=stiffness_gap,relative_nodal_mass_difference=mass_gap,
@@ -147,6 +151,8 @@ def plot_report(folder):
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
     cases=report['cases'];x=np.arange(len(cases));width=.18
+    scheme=report['settings'].get('time_scheme','backward_euler')
+    scheme_label='Crank-Nicolson' if scheme=='crank_nicolson' else 'backward Euler'
     colors=['#64748b','#a78bfa','#38bdf8','#f97316']
     names=['TorchCor P1 + Jacobi-PCG','P1 + AMG-PCG','Nodal P1 + TorchCor Jacobi-PCG','AFSEI nodal P1 + AMG-PCG']
     fig,axes=plt.subplots(1,2,figsize=(13,4.8),layout='constrained')
@@ -167,7 +173,7 @@ def plot_report(folder):
                 xticklabels=[f'{c["spacing_mm"]:g} mm' for c in cases])
     axes[1].set_ylim(0,max(1.15,max(c['warm_pde_speedup'] for c in cases)*1.25))
     for ax in axes:ax.grid(axis='y',alpha=.2);ax.set_axisbelow(True)
-    fig.suptitle('RTX 4090 | FP64 | backward Euler 0.05 ms | common true residual tolerance')
+    fig.suptitle(f'RTX 4090 | FP64 | {scheme_label} 0.05 ms | common true residual tolerance')
     fig.savefig(folder/'pde_methods_comparison.png',dpi=200)
     fig.savefig(folder/'pde_methods_comparison.pdf')
     plt.close(fig)
@@ -189,7 +195,7 @@ def plot_report(folder):
                 xticks=x,xticklabels=[f'{c["spacing_mm"]:g} mm' for c in cases],
                 ylim=(0,max(1.15,max(ratios)*1.25)))
     for ax in axes:ax.grid(axis='y',alpha=.2);ax.set_axisbelow(True)
-    fig.suptitle('PDE only | RTX 4090 | FP64 | dt = 0.05 ms | warm averaged wall time')
+    fig.suptitle(f'PDE only | RTX 4090 | FP64 | {scheme_label} dt = 0.05 ms | warm averaged wall time')
     fig.savefig(folder/'pde_main_comparison.png',dpi=200)
     fig.savefig(folder/'pde_main_comparison.pdf');plt.close(fig)
 
@@ -202,11 +208,13 @@ def main(argv=None):
     args=parser.parse_args(argv)
     if args.plot_only:return plot_report(args.output)
     settings=json.loads(args.config.read_text())
-    expected={'demo','schema_version','torchcor_commit','torchcor_source_dir','source_results_root','cases',
+    expected={'demo','schema_version','time_scheme','torchcor_commit','torchcor_source_dir','source_results_root','cases',
               'snapshot_times_ms','warmup_rounds','rounds_per_repeat','repeats','max_iterations','rtol','atol'}
     if (set(settings)!=expected or settings['demo']!='ep-pde-methods-benchmark' or
             settings['schema_version']!=1 or settings['torchcor_commit']!=COMMIT):
         parser.error('use the pinned declared benchmark schema')
+    if settings['time_scheme'] not in ('backward_euler','crank_nicolson'):
+        parser.error('use backward_euler or crank_nicolson')
     if any(type(settings[k]) is not int or settings[k]<1 for k in ('warmup_rounds','rounds_per_repeat','repeats','max_iterations')):
         parser.error('positive integer sample counts required')
     if not torch.cuda.is_available():parser.error('actual CUDA required')
@@ -227,7 +235,7 @@ def main(argv=None):
         input_scope='saved GPB voltage snapshots; zero ionic current; common corner stimulus active only at t=0 snapshot',
         true_residual_rule='norm(b-Ax) <= max(atol, rtol*norm(b)); all representative inputs independently verified',
         initial_guess='same prescribed snapshot voltage for all methods; TorchCor linear extrapolation disabled',
-        time_scheme='backward Euler for all; TorchCor simulator default theta=0.5 is deliberately not used',
+        time_scheme=settings['time_scheme'],theta=.5 if settings['time_scheme']=='crank_nicolson' else 1.,
         cold_scope='assembly/setup recorded separately; not included in warm PDE speed ratio',
         waveform_accuracy_or_full_EP_speed_established=False)
     atomic_json(args.output/'report.json',report);plot_report(args.output)

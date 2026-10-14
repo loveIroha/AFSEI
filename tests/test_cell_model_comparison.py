@@ -28,6 +28,10 @@ def test_external_signature_allows_only_cell_model_and_output_changes():
     assert _cell_signature(asdict(gpb))==_cell_signature(asdict(ord))
     legacy=asdict(gpb);legacy['domain'].pop('axis_spacing_cm')
     assert _cell_signature(legacy)==_cell_signature(asdict(ord))
+    legacy['ep_numerics'].pop('time_scheme')
+    be=replace(gpb,ep_numerics=replace(gpb.ep_numerics,time_scheme='backward_euler'))
+    assert _cell_signature(legacy)==_cell_signature(asdict(be))
+    assert _cell_signature(legacy)!=_cell_signature(asdict(ord))
     for changed in (replace(ord,domain=replace(ord.domain,spacing_cm=.025)),
                     replace(ord,time=replace(ord.time,dt_ep_s=1e-5,dt_ode_ms=.001)),
                     replace(ord,parameters=replace(ord.parameters,surface_to_volume_per_cm=1.)),

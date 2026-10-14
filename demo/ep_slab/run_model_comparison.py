@@ -38,6 +38,7 @@ def main(argv=None):
     resolved=dict(study=study,base=asdict(base))
     if saved.exists():
         cached=json.loads(saved.read_text())
+        cached['base']['ep_numerics'].setdefault('time_scheme','backward_euler')
         # Fill new optional defaults when resuming results from older schemas.
         cached['base']=asdict(_decode(EPTissueConfig,cached['base']))
         if json.loads(json.dumps(cached))!=json.loads(json.dumps(resolved)):
@@ -65,7 +66,9 @@ def main(argv=None):
             destination=output/f'{name}_{model}'
             if (destination/'report.json').exists():
                 report=json.loads((destination/'report.json').read_text())
-                actual=json.loads(json.dumps(asdict(load_config(destination/'config_resolved.json',EPTissueConfig))))
+                data=json.loads((destination/'config_resolved.json').read_text());data.pop('demo',None)
+                data['ep_numerics'].setdefault('time_scheme','backward_euler')
+                actual=json.loads(json.dumps(asdict(_decode(EPTissueConfig,data))))
                 if report['status']!='completed' or actual!=json.loads(json.dumps(asdict(config))):
                     raise ValueError(f'existing case does not match: {destination}')
                 print(f'Reuse completed case: {destination}',flush=True)

@@ -10,7 +10,8 @@ nodal FEM/AmgX 与 GPB 求解器：
 `python demo/run.py demo/ep_slab/configs/santiago_gpb.json`。
 
 当前主线采用原 AFSI_GPU 的规则 MAC 网格与 BE–BE 隐式流固求解器，入口为 `scripts/run_afsei.py`。
-EP 默认使用四面体 P1 顶点积分与集中质量，PyTorch 装配、AmgX PCG-AMG GPU 求解；
+EP 新运行默认使用四面体 P1 顶点积分、集中质量和 CN 扩散时间推进，
+PyTorch 装配、AmgX PCG-AMG GPU 求解；旧检查点保留原 BE 时间格式。
 GPB/Land 使用 CUDA，主动张力取代原自定义波形。配置、安装及实测见
 [EP 顶点积分与 AmgX](docs/EP_NODAL_AMGX.md)。旧一致质量/Jacobi 后端可显式选择。
 默认配置恢复为原真实 LV 的 128³、13 cm 外箱及已有求解器优化，保留源电–力材料、基底和方向映射。

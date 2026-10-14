@@ -16,6 +16,9 @@ GPB 与原始 ORd 在统一外部条件下的实测比较、独立标准 JSON �
 
 仅比较 PDE 的 [TorchCor P1-Galerkin / nodal FEM + AMG 耗时实测](PDE_METHODS_BENCHMARK.md)
 复用保存的三维快照，不计算 ODE；包含标准 JSON、四组对照和耗时图。
+双方统一 CN 的新实测见 [CN PDE 耗时对照](PDE_METHODS_CN_BENCHMARK.md)。
+本目录之前的传播实验 JSON 已显式保留 `backward_euler` 作为历史参考；
+AFSEI 主程序的新计算默认 CN，旧检查点按原时间格式恢复。
 
 ## 配置、实验与求解器分离
 
