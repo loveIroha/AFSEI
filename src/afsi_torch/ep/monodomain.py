@@ -124,6 +124,10 @@ class Monodomain:
             if self.numerics.backend == 'amgx_pcg_amg':
                 from .amgx import AmgXPCG
                 backend = AmgXPCG(matrix, self.solver_options,profile=self.numerics.amg_profile)
+            elif self.numerics.backend == 'torch_pcg_jacobi_light':
+                from .jacobi import JacobiPCG
+                diagonal=alpha*self.mass_diagonal+self.numerics.theta*self.stiffness_diagonal
+                backend=JacobiPCG(matrix,diagonal,self.solver_options)
             self._systems[dt_s] = (alpha, matrix, backend)
         return self._systems[dt_s]
 

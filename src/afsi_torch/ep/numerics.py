@@ -15,8 +15,8 @@ class MonodomainNumerics:
     def __post_init__(self):
         if self.discretization not in ('nodal_p1', 'consistent_p1'):
             raise ValueError('EP discretization must be nodal_p1 or consistent_p1')
-        if self.backend not in ('amgx_pcg_amg', 'torch_pcg_jacobi'):
-            raise ValueError('EP backend must be amgx_pcg_amg or torch_pcg_jacobi')
+        if self.backend not in ('amgx_pcg_amg', 'torch_pcg_jacobi', 'torch_pcg_jacobi_light'):
+            raise ValueError('unsupported EP solver backend')
         if not isinstance(self.solver, SolverOptions):
             raise ValueError('EP solver settings must be SolverOptions')
         if self.time_scheme not in ('backward_euler','crank_nicolson'):

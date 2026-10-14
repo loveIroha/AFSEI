@@ -1,4 +1,4 @@
-"""Two-method PDE experiment: native TorchCor vs PyTorch nodal FEM + AMG."""
+"""PDE experiment: native TorchCor vs actual PyTorch nodal AMG/Jacobi backend."""
 import argparse,gc,json,os,sys
 from pathlib import Path
 from statistics import median
@@ -30,14 +30,15 @@ def data(folder,settings):
     zero=X.new_zeros(len(X));stim=zero.masked_fill(mask,cfg.stimulus.amplitude_ua_per_cm2)
     inputs=[(V,zero,stim if 0<=t<cfg.stimulus.duration_s*1000 else zero)
             for V,t in zip(volts,settings['snapshot_times_ms'])]
-    options=SolverOptions(rtol=settings['rtol'],atol=settings['atol'],max_iterations=settings['max_iterations'])
+    extra={'check_every':settings['check_every']} if 'check_every' in settings else {}
+    options=SolverOptions(rtol=settings['rtol'],atol=settings['atol'],max_iterations=settings['max_iterations'],**extra)
     return cfg,X,cells,f,s,inputs,options
 
 
-def make_ep(d,profile):
+def make_ep(d,profile,backend='amgx_pcg_amg'):
     cfg,X,cells,f,s,inputs,options=d
     ep=Monodomain(X,cells,f,s,parameters=cfg.parameters,numerics=MonodomainNumerics(
-        solver=options,time_scheme='crank_nicolson',amg_profile=profile))
+        solver=options,time_scheme='crank_nicolson',backend=backend,amg_profile=profile or 'size2'))
     ep.prepare(cfg.time.dt_ep_s)
     return ep
 
@@ -87,13 +88,14 @@ def pilot(d,settings):
 
 def paired(d,settings,classes,electric,profile):
     cfg,X,cells,f,s,inputs,options=d;dt=cfg.time.dt_ep_s
+    backend=settings.get('backend','amgx_pcg_amg')
     dirs=torch.stack((f[0],s[0],torch.linalg.cross(f[0],s[0])))
     sigma=torch.einsum('a,ai,aj->ij',X.new_tensor(cfg.parameters.conductivity_us_per_cm),dirs,dirs)
     Matrices3D=classes[0]
     (K,M),native_assembly=synchronized_time(lambda:Matrices3D(X,cells,X.device,X.dtype).assemble_matrices(sigma))
     K,M=K.to_sparse_csr(),M.to_sparse_csr()
     native,native_setup=synchronized_time(lambda:NativeTorchCorPDE(M,K,cfg.parameters,dt,options,classes,electric))
-    ep,afsei_preparation=synchronized_time(lambda:make_ep(d,profile))
+    ep,afsei_preparation=synchronized_time(lambda:make_ep(d,profile,backend))
     gap=max_sparse_relative_difference(ep.stiffness,K)
     mass_gap=((torch.sparse.sum(M.to_sparse_coo(),dim=1).to_dense()-ep.mass_diagonal).abs().max()/ep.mass_diagonal.abs().max()).item()
     if max(gap,mass_gap)>1e-10:raise RuntimeError('geometry/conductivity equivalence failed')
@@ -113,9 +115,9 @@ def paired(d,settings,classes,electric,profile):
     rows=[dict(method=name,mean_pde_ms=sum(times)/len(times),median_pde_ms=median(times),repeat_pde_ms=times,
                mean_iterations=sum(count)/len(count),max_true_residual_ratio=max(r),
                timed_solves=len(inputs)*settings['rounds_per_repeat']*settings['repeats'])
-          for name,times,count,r in zip(('torchcor_native_p1','afsei_pytorch_nodal_amgx'),samples,iterations,ratios)]
+          for name,times,count,r in zip(('torchcor_native_p1','afsei_pytorch_nodal_'+dict(amgx_pcg_amg='amgx',torch_pcg_jacobi='jacobi',torch_pcg_jacobi_light='jacobi_light')[backend]),samples,iterations,ratios)]
     result=dict(case=cfg.case_name,spacing_mm=cfg.domain.spacing_cm*10,node_count=len(X),cell_count=len(cells),
-        dt_ep_ms=dt*1000,time_scheme='crank_nicolson',amg_profile=profile,methods=rows,
+        dt_ep_ms=dt*1000,time_scheme='crank_nicolson',backend=backend,amg_profile=profile,methods=rows,
         speedup=rows[0]['mean_pde_ms']/rows[1]['mean_pde_ms'],
         native_assembly_s=native_assembly,native_setup_s=native_setup,afsei_preparation_s=afsei_preparation,
         relative_stiffness_difference=gap,relative_lumped_mass_difference=mass_gap)
@@ -130,7 +132,11 @@ def plot(folder):
     import matplotlib.pyplot as plt
     report=json.loads((folder/'report.json').read_text());cases=report['cases'];x=np.arange(len(cases))
     fig,axes=plt.subplots(1,2,figsize=(12,4.6),layout='constrained')
-    for k,(name,color) in enumerate((('TorchCor native P1-Galerkin','#64748b'),('AFSEI PyTorch nodal FEM + AMG','#f97316'))):
+    backend=report['settings'].get('backend','amgx_pcg_amg')
+    jacobi=backend!='amgx_pcg_amg'
+    light=backend=='torch_pcg_jacobi_light'
+    ours=('AFSEI nodal FEM + light Jacobi-PCG' if light else 'AFSEI nodal FEM + Jacobi-PCG') if jacobi else 'AFSEI PyTorch nodal FEM + AMG'
+    for k,(name,color) in enumerate((('TorchCor native P1-Galerkin','#64748b'),(ours,'#38bdf8' if jacobi else '#f97316'))):
         vals=[c['methods'][k]['mean_pde_ms'] for c in cases]
         errors=np.array([[v-min(c['methods'][k]['repeat_pde_ms']),max(c['methods'][k]['repeat_pde_ms'])-v]
                           for v,c in zip(vals,cases)]).T
@@ -140,11 +146,17 @@ def plot(folder):
     axes[0].set(ylabel='PDE time per step (ms)',title='Two-method comparison: same benchmark',xticks=x,xticklabels=labels)
     axes[0].set_ylim(0,axes[0].get_ylim()[1]*1.2);axes[0].legend(fontsize=8)
     bars=axes[1].bar(x,[c['speedup'] for c in cases],color=['#f97316' if c['speedup']>=1 else '#64748b' for c in cases])
-    axes[1].bar_label(bars,fmt='%.2fx',padding=4);axes[1].axhline(1,color='#64748b',ls='--')
+    for bar,c in zip(bars,cases):
+        value=c['speedup'];inside=.9<=value<1
+        axes[1].text(bar.get_x()+bar.get_width()/2,value-.06 if inside else value+.03,
+                     f'{value:.2f}x',ha='center',va='top' if inside else 'bottom',
+                     color='white' if inside else 'black')
+    axes[1].axhline(1,color='#64748b',ls='--')
     axes[1].set(ylabel='TorchCor native time / AFSEI time',title='>1: AFSEI faster; <1: TorchCor faster',xticks=x,xticklabels=labels,
                 ylim=(0,max(1.2,max(c['speedup'] for c in cases)*1.25)))
     for ax in axes:ax.grid(axis='y',alpha=.2);ax.set_axisbelow(True)
-    fig.suptitle(f'RTX 4090 | FP64 | CN 0.05 ms | same true residual | AMG {report["pilot"]["selected_profile"]}')
+    solver=('EP light Jacobi-PCG' if light else 'AFSEI general Jacobi-PCG') if jacobi else f'AMG {report["pilot"]["selected_profile"]}'
+    fig.suptitle(f'RTX 4090 | FP64 | CN 0.05 ms | same true residual | {solver}')
     fig.savefig(folder/'native_pair_pde.png',dpi=200);fig.savefig(folder/'native_pair_pde.pdf');plt.close(fig)
 
 
@@ -160,6 +172,8 @@ def main(argv=None):
     settings=json.loads(a.config.read_text())
     if settings['demo']!='ep-native-pair-benchmark' or settings['schema_version']!=1 or settings['time_scheme']!='crank_nicolson':
         parser.error('declared native CN benchmark required')
+    backend=settings.get('backend','amgx_pcg_amg')
+    if backend not in ('amgx_pcg_amg','torch_pcg_jacobi','torch_pcg_jacobi_light'):parser.error('unsupported nodal solver backend')
     if not torch.cuda.is_available():parser.error('actual CUDA required')
     if a.output.exists() and any(a.output.iterdir()) and not a.resume_experiment:parser.error('new output or explicit resume required')
     a.output.mkdir(parents=True,exist_ok=True);torch.set_default_dtype(torch.float64)
@@ -168,10 +182,13 @@ def main(argv=None):
     if saved.exists() and json.loads(saved.read_text())!=settings:parser.error('resume cannot change conditions')
     atomic_json(saved,settings)
     root=Path(settings['source_results_root'])
-    print('Pilot: optimize declared AMG profiles on the fixed 0.25mm case',flush=True)
-    if (a.output/'pilot.json').exists():
+    if backend!='amgx_pcg_amg':
+        selected=dict(selected_profile=None,selection='fixed AFSEI PyTorch Jacobi-PCG; no AMG pilot')
+    elif (a.output/'pilot.json').exists():
         selected=json.loads((a.output/'pilot.json').read_text());print('Reuse completed AMG pilot',flush=True)
-    else:selected=pilot(data(root/settings['pilot_case'],settings),settings)
+    else:
+        print('Pilot: optimize declared AMG profiles on the fixed 0.25mm case',flush=True)
+        selected=pilot(data(root/settings['pilot_case'],settings),settings)
     atomic_json(a.output/'pilot.json',selected);print(json.dumps(selected,indent=2),flush=True)
     cases=[]
     for name in settings['cases']:
@@ -186,7 +203,7 @@ def main(argv=None):
         print(json.dumps(result,indent=2),flush=True)
     report=dict(status='completed',gpu=torch.cuda.get_device_name(),dtype='float64',settings=settings,
         torchcor=provenance,pilot=selected,cases=cases,
-        scope='native TorchCor PDE statements vs actual AFSEI Monodomain.step; no nodal+TorchCor control',
+        scope='native TorchCor PDE statements vs actual AFSEI Monodomain.step; AFSEI backend='+backend,
         timing='warm synchronized wall-clock; RHS and solver; excludes ODE, I/O and one-time preparation',
         source='same saved voltage snapshots, zero ionic current, common prescribed pulse; not a new physiological trajectory',
         common_precision='same true residual tolerance, initial prescribed Vm; linear extrapolation disabled for frozen replay',

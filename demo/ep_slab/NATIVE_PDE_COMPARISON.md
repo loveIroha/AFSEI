@@ -75,6 +75,8 @@ python demo/ep_slab/plot_finest_pde_comparison.py \
 
 此结果支持在当前算例上进一步采用轻量 GPU Jacobi-PCG；没有修改现有 PDE 后端或 CN 格式，也没有增加网格档位。
 
+后续已完成 [AFSEI 独立轻量 Jacobi-PCG 与原生 TorchCor 的三档配对](NATIVE_JACOBI_COMPARISON.md)。该实验使用 AFSEI 自身实现，与上述调用 TorchCor 内核的消融不同；0.125 mm 新实测为 2.6664／2.4608 ms，AFSEI 仍慢约 8.4%。
+
 ## 实现与验证
 
 AMG 配置作为 `MonodomainNumerics.amg_profile` 选项接入实际求解器，支持 `size2`、`size4`、`size8`、`size8_two_level`。矩阵与层级按步长缓存复用。
