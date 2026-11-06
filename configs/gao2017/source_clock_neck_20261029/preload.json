@@ -1,0 +1,8 @@
+{
+  "reference_checkpoint": "results/afsei_two_cycles_coarse_900ms_20261023/diagnostics/tick_00027998/checkpoint.npz",
+  "geometry_anchor": "results/gao_cut_cycle_validation_20261026/loading/preload_history.npz",
+  "ramp_s": 0.2,
+  "cut_geometry": {"shared_collar_cells": 3, "neck_corner_trim_cells": 1},
+  "tract_geometry_gpu": true,
+  "output": "results/afsei_source_neck_preload_200ramp_300hold_20261029"
+}

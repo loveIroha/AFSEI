@@ -112,14 +112,23 @@ def prepare_local_cap(prepared, *, patch_width_cells=3., minimum_area_fraction=.
     for region in regions: mask |= cap.labels == region
     selected = torch.nonzero(mask).flatten()
     points, areas = prepared.points[selected], prepared.area_vectors[selected]
+    point_area = torch.linalg.vector_norm(areas, dim=-1)
+    if prepared.partition_points is not None:
+        # Assign pressures to the same labelled material subtriangles as the
+        # centroid method, not to each new Gaussian integration point.
+        parents,integration_inverse=torch.unique(cap.integration_parent[selected],sorted=True,return_inverse=True)
+        partition_points=prepared.partition_points[parents]
+        partition_area=points.new_zeros(len(parents)).index_add_(0,integration_inverse,point_area)
+    else:
+        partition_points,partition_area=points,point_area
+        integration_inverse=None
     width = patch_width_cells*max(grid.spacing)
-    uv = (points-points.mean(0))@cap.frame[:2].T
+    uv = (partition_points-partition_points.mean(0))@cap.frame[:2].T
     bins = torch.floor((uv-uv.amin(0))/width).to(torch.int64)
     _, inverse = torch.unique(bins, dim=0, return_inverse=True)
     n = int(inverse.max().item())+1
-    point_area = torch.linalg.vector_norm(areas, dim=-1)
-    bin_area = points.new_zeros(n).index_add_(0, inverse, point_area)
-    centers = points.new_zeros((n, 2)).index_add_(0, inverse, uv*point_area[:, None])/bin_area[:, None]
+    bin_area = points.new_zeros(n).index_add_(0, inverse, partition_area)
+    centers = points.new_zeros((n, 2)).index_add_(0, inverse, uv*partition_area[:, None])/bin_area[:, None]
     substantial = torch.nonzero(bin_area >= minimum_area_fraction*width**2).flatten()
     if len(substantial) == 0:
         raise ValueError('patch width too large for the non-port cap')
@@ -127,6 +136,7 @@ def prepare_local_cap(prepared, *, patch_width_cells=3., minimum_area_fraction=.
     assignment = torch.cdist(centers, centers[substantial]).argmin(-1)
     assignment[substantial] = torch.arange(len(substantial), device=points.device)
     patches = assignment[inverse]
+    if integration_inverse is not None: patches=patches[integration_inverse]
     count = len(substantial)
     area = points.new_zeros(count).index_add_(0, patches, point_area)
     components = []
@@ -156,7 +166,8 @@ class MACCapProjection:
     """
     def __init__(self, rows, pressure_solver, *, options=None):
         self.rows, self.grid, self.pressure_solver = rows, rows.prepared.cap.grid, pressure_solver
-        if (not isinstance(pressure_solver, (DirichletMultigrid,SpectralDirichletPressure))
+        from ..mac.sealed_pressure import SealedPressure
+        if (not isinstance(pressure_solver, (DirichletMultigrid,SpectralDirichletPressure,SealedPressure))
                 or tuple(pressure_solver.shapes[0]) != self.grid.shape
                 or tuple(pressure_solver.spacings[0]) != self.grid.spacing):
             raise ValueError('pressure solver and cap MAC grids differ')
@@ -164,8 +175,12 @@ class MACCapProjection:
                                                 recompute_every=30, check_every=1)
         self.pressure_calls = self.pressure_cycles = 0
         self.weights = tuple(face_weights(self.grid, c, rows.area) for c in range(3))
+        self.face_masks=getattr(pressure_solver,'masks',None)
+        if self.face_masks is not None:self.face_masks=self.face_masks[0]
 
     def divergence_project(self, velocity):
+        if self.face_masks is not None:
+            velocity=tuple(u*m for u,m in zip(velocity,self.face_masks))
         rhs = -divergence(velocity, self.grid.spacing)
         scale = torch.linalg.vector_norm(rhs).item()
         if scale == 0:
@@ -176,7 +191,11 @@ class MACCapProjection:
         phi = phi*scale
         self.pressure_calls += 1
         self.pressure_cycles += info['cycles']
-        return tuple(u-g for u, g in zip(velocity, gradient(phi, self.grid.spacing))), phi
+        if self.face_masks is not None:
+            from ..mac.sealed_pressure import gradient as cut_gradient
+            g=cut_gradient(phi,self.grid.spacing,self.face_masks)
+        else:g=gradient(phi,self.grid.spacing)
+        return tuple(u-v for u,v in zip(velocity,g)),phi
 
     def action(self, multiplier):
         correction, _ = self.divergence_project(self.rows.lift(multiplier))

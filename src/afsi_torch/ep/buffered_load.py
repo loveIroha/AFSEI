@@ -22,13 +22,21 @@ class ActiveLoadState:
     anchor: torch.Tensor | None = None
     ramp_factor: float = 0.0
 
-    def materialize(self, mesh):
+    def materialize(self, mesh, transfer=None):
         # Zero mode uses a zero frozen anchor. This is only for checkpoint
         # validation/reference comparisons; the hot loop uses buffered tables.
         anchor = None if self.use_land else self.anchor
         if not self.use_land and anchor is None:
             from ..p1 import prepare_p1
             anchor = torch.zeros_like(prepare_p1(mesh.X,mesh.cells,5).weights)
+        if transfer is not None and len(self.xs)==transfer.fine_nodes:
+            from ..p1 import prepare_p1
+            g=prepare_p1(mesh.X,mesh.cells,5)
+            previous=torch.einsum('eai,eaJ->eiJ',self.previous_x[g.cells],g.gradients[:,0])
+            fields=transfer.quadrature(torch.stack((self.xs,self.xw,self.zs_old,self.zw_old),-1))
+            return LandQuadratureLoad(g,mesh.fiber.detach().clone(),previous.detach().clone(),
+                fields.detach().clone(),self.dt_s,'land' if self.use_land else 'frozen',
+                anchor,self.ramp_factor)
         return LandQuadratureLoad.prepare(mesh.X,mesh.cells,mesh.fiber,self.previous_x,
             self.xs,self.xw,self.zs_old,self.zw_old,self.dt_s,
             anchor=anchor,ramp_factor=self.ramp_factor)
@@ -44,6 +52,7 @@ class BufferedLandLoad:
         self.dt = fiber.new_tensor(1e-4)
         self.use_land = fiber.new_tensor(0.)
         self.ramp = fiber.new_tensor(0.)
+        self.field_transfer = None
 
     @torch.no_grad()
     def stage(self, state):
@@ -51,8 +60,11 @@ class BufferedLandLoad:
         if (not isfinite(state.dt_s) or state.dt_s <= 0 or not isfinite(state.ramp_factor)
                 or not 0 <= state.ramp_factor <= 1 or type(state.use_land) is not bool):
             raise ValueError('invalid active trial step or mode')
+        field_nodes=len(state.xs)
+        if field_nodes!=g.node_count and (self.field_transfer is None or field_nodes!=self.field_transfer.fine_nodes):
+            raise ValueError('active fields must be on structural or configured fine EP nodes')
         for value,shape in ((state.previous_x,(g.node_count,3)),
-                            *((v,(g.node_count,)) for v in (state.xs,state.xw,state.zs_old,state.zw_old))):
+                            *((v,(field_nodes,)) for v in (state.xs,state.xw,state.zs_old,state.zw_old))):
             if (value.shape != shape or value.dtype != self.fiber.dtype or value.device != self.fiber.device
                     or not torch.isfinite(value).all()):
                 raise ValueError('active trial fields must match the solid mesh')
@@ -63,7 +75,10 @@ class BufferedLandLoad:
         if not state.use_land and state.ramp_factor > 0 and state.anchor is None:
             raise ValueError('positive closure ramp requires an accepted anchor')
         nodal = torch.stack((state.xs,state.xw,state.zs_old,state.zw_old),-1)
-        self.fields.copy_(torch.einsum('qa,eak->eqk',g.values,nodal[g.cells]))
+        if field_nodes==g.node_count:
+            self.fields.copy_(torch.einsum('qa,eak->eqk',g.values,nodal[g.cells]))
+        else:
+            self.fields.copy_(self.field_transfer.quadrature(nodal))
         self.previous_F.copy_(torch.einsum('eai,eaJ->eiJ',state.previous_x[g.cells],g.gradients[:,0]))
         if state.anchor is None: self.anchor.zero_()
         else: self.anchor.copy_(state.anchor)

@@ -31,6 +31,8 @@ class PressureModeStencil:
     force_potential: torch.Tensor
     rows: object
     report: dict
+    cap_unit_pressure: torch.Tensor | None = None
+    cut_unit_lift: tuple | None = None
 
 
 class PressureModeTransfer:
@@ -75,6 +77,15 @@ class PressureModeTransfer:
         original = self.base.prepare(x)
         rows = closed_rows(d, x)
         t = -self.pressure_load.force(x, 1.)
+        unit=None;cut_lift=None
+        if getattr(d,'cut_boundary',False):
+            from .gao_tracts import cut_rows
+            from .mac_transport import closed_volume_gradient
+            rows=cut_rows(d,x)
+            unit=torch.full_like(rows.area,C);unit[-2:]=0.
+            total_gradient=closed_volume_gradient(x,self.pressure_load.faces,self.pressure_load.rim)
+            total_gradient=total_gradient+d.flow.domain.storage.discrete(x,x)
+            t=-C*(total_gradient-rows.reaction(unit)/C)
         square=t.square().sum()
         if not (torch.isfinite(t).all() & (square>0)):
             raise ValueError('finite nonzero source pressure mode required')
@@ -110,9 +121,25 @@ class PressureModeTransfer:
                for axis in range(3) for side in (0,1,q.shape[axis]-2,q.shape[axis]-1)]).max()>0:
             raise ValueError('compact hydrostatic pressure reaches outer boundary; enlarge MAC box')
         # phi=H_pressure*q; compact support gives G phi=H_velocity G q.
-        phi = q+d.flow.dt*d.flow.mu/d.flow.rho*negative_laplacian(q, d.grid.spacing)
-        g = gradient(phi, d.grid.spacing)
-        lift = rows.lift(torch.full_like(rows.area, C))
+        if getattr(d,'cut_boundary',False):
+            # Unit pressure now covers LV + fixed tracts. Its physical cut
+            # lift cancels the artificial zero-Dirichlet gradient at the
+            # terminal faces. The combined target is still work adjoint.
+            from ..mac.sealed_pressure import gradient as cut_gradient
+            q=torch.where(d.flow.domain.label>0,torch.full_like(q,C),q)
+            phi=q
+            g=cut_gradient(q,d.grid.spacing,d.flow.domain.masks)
+            cut_lift=list(d.grid.zeros(device=x.device,dtype=x.dtype))
+            for plane in d.flow.planes:
+                sign=-1. if plane.side==0 else 1.
+                cut_lift[plane.axis].select(plane.axis,plane.side).add_(
+                    sign*2*C/d.grid.spacing[plane.axis]*plane.aperture.to(x.dtype))
+            cut_lift=tuple(cut_lift)
+            lift=tuple(a+b for a,b in zip(rows.lift(unit),cut_lift))
+        else:
+            phi=q+d.flow.dt*d.flow.mu/d.flow.rho*negative_laplacian(q,d.grid.spacing)
+            g=gradient(phi,d.grid.spacing)
+            lift=rows.lift(torch.full_like(rows.area,C))
         self.base.reset_warm_start()
         st, _ = self.base.spread(t, original)
         correction = tuple(a+b-c for a, b, c in zip(g, lift, st))
@@ -145,7 +172,10 @@ class PressureModeTransfer:
             extra_pressure_solves_during_residual=0, corrected_global_modes=1)
         self.base.reset_warm_start()
         target = tuple(a+b for a, b in zip(g, lift))
-        return PressureModeStencil(original, t, dual, correction, g, target, q, phi, rows, report)
+        if unit is not None:report.update(control_volume='LV plus both fixed tracts',
+            compact_pressure_support='LV plus tracts up to physical cuts',
+            hydrostatic_response_evaluated_by_exact_BE_superposition=False)
+        return PressureModeStencil(original, t, dual, correction, g, target, q, phi, rows, report,unit,cut_lift)
 
     def reset_warm_start(self):
         self.base.reset_warm_start()
@@ -164,8 +194,10 @@ class PressureModeTransfer:
         amplitude = (stencil.dual*force).sum()
         remainder, info = self.base.spread(force-amplitude*stencil.mode, stencil.original)
         rows = stencil.rows if rows is None else rows
-        cap = rows.lift(amplitude*C-cap_pressure)
-        return tuple(f+amplitude*g+c for f, g, c in zip(remainder, stencil.gradient, cap)), info
+        unit=C if stencil.cap_unit_pressure is None else stencil.cap_unit_pressure
+        cap = rows.lift(amplitude*unit-cap_pressure)
+        extra=(0.,)*3 if stencil.cut_unit_lift is None else stencil.cut_unit_lift
+        return tuple(f+amplitude*(g+b)+c for f,g,b,c in zip(remainder,stencil.gradient,extra,cap)),info
 
     @torch.no_grad()
     def relative_parts(self, force, cap_pressure, stencil, *, rows=None,check_finite=True):
@@ -173,7 +205,12 @@ class PressureModeTransfer:
         amplitude = (stencil.dual*force).sum()
         remainder, info = self.base.spread(force-amplitude*stencil.mode, stencil.original)
         rows = stencil.rows if rows is None else rows
-        remainder=add_cap_lift(rows,amplitude*C-cap_pressure,remainder,check_finite=check_finite)
+        unit=C if stencil.cap_unit_pressure is None else stencil.cap_unit_pressure
+        remainder=add_cap_lift(rows,amplitude*unit-cap_pressure,remainder,check_finite=check_finite)
+        if getattr(self.endpoint,'cut_boundary',False):
+            # Evaluate the full original projection response. Do not reuse
+            # the open-box analytic zero-velocity hydrostatic shortcut.
+            return tuple(f+amplitude*(g+b) for f,g,b in zip(remainder,stencil.gradient,stencil.cut_unit_lift)),amplitude.new_zeros(()),info
         return remainder, amplitude, info
 
     @torch.no_grad()

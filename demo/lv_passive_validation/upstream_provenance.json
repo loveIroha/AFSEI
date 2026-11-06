@@ -1,0 +1,65 @@
+{
+  "source_project": "/mnt/large2/gjh/AFSI_GPU",
+  "source_head": "cb2d30b",
+  "spatial_update": "9c39e32",
+  "time_scheme": "BE-BE retained",
+  "files": [
+    {
+      "path": "src/afsi_torch/mac/adaptive_transfer.py",
+      "sha256": "e03793c69dece223cc955de3ef80ed0d5a11b413373069702b8d73f99d57faea",
+      "byte_identical_to_upstream": true
+    },
+    {
+      "path": "src/afsi_torch/mac/p2_cuda_transfer.py",
+      "sha256": "79f94a9b0439d5abdc36530a3a0ff1813d4a814966d1f705617db2c5acd054f1",
+      "byte_identical_to_upstream": true
+    },
+    {
+      "path": "src/afsi_torch/mac/cuda_ib.py",
+      "sha256": "169f65fd978c7eaf209943c8f5613518b00d1ba5d4afac687413ee6d194cfbb0",
+      "byte_identical_to_upstream": true
+    },
+    {
+      "path": "src/afsi_torch/mac/csrc/p2_transfer.cpp",
+      "sha256": "7d6da3e60ddcad3e830f06cb471de70c55c11c1ced4c34b84c9352799783c75f",
+      "byte_identical_to_upstream": true
+    },
+    {
+      "path": "src/afsi_torch/mac/csrc/p2_transfer.cu",
+      "sha256": "1e421c43f3c4d24353626ecd617d82eae8d46d3b4644125a6a18a1d30cd1109e",
+      "byte_identical_to_upstream": true
+    }
+  ],
+  "adapted_files": [
+    {
+      "path": "src/afsi_torch/mac/be_stokes.py",
+      "source": "src/afsi_torch/mac/stokes_fgmres.py",
+      "source_commit": "9c39e32",
+      "adaptations": [
+        "BE alpha=dt*mu/rho",
+        "original AFSEI open pressure/velocity boundary operators",
+        "no pressure mean removal or zero-normal condition",
+        "geometric Dirichlet multigrid projection preconditioner"
+      ],
+      "full_cn_ab2": false
+    }
+  ],
+  "cap_integration_update": {
+    "date": "2026-10-18",
+    "scope": "AFSEI basal-port extension; not a change to upstream FE/IB S/J",
+    "rules": ["centroid", "gauss3", "gauss7", "gauss12"],
+    "historical_checkpoint_default": "centroid",
+    "pressure_partition_preserved": true,
+    "new_tests_passed": 16,
+    "new_fsi_steps": 3,
+    "result": "results/lv_gauss12_trial203_20261018/report.json",
+    "full_cycle_validated": false
+  },
+  "validation": {
+    "adaptive_and_standard_port_tests": 16,
+    "legacy_restart_regression": 1,
+    "standard_projection_restart": 1,
+    "be_stokes_dense_cpu_gpu_and_restart": 3,
+    "all_listed_passed": true
+  }
+}

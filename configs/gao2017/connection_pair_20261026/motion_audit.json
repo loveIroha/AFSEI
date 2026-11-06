@@ -1,0 +1,11 @@
+{
+  "resume": "results/afsei_peak665_av060_20261019/diagnostics/tick_00013288/checkpoint.npz",
+  "geometry_anchor": "results/afsei_peak665_av060_20261019/diagnostics/tick_00010002/checkpoint.npz",
+  "output": "results/gao_tract_motion_20261026/frozen_audit",
+  "trajectory": [
+    "results/afsei_peak665_av060_20261019/diagnostics/tick_00011000/checkpoint.npz",
+    "results/afsei_peak665_av060_20261019/diagnostics/tick_00012400/checkpoint.npz",
+    "results/afsei_peak665_av060_20261019/diagnostics/tick_00013288/checkpoint.npz",
+    "results/afsei_peak665_av060_20261019/diagnostics/tick_00013300/checkpoint.npz"
+  ]
+}

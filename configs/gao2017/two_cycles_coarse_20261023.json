@@ -1,0 +1,19 @@
+{
+  "physical_gpu": 1,
+  "preload": "results/phase24_mac128_balanced_preload_final_v1/preload_result.npz",
+  "reference_checkpoint": "results/phase10_mac128_source_preload_v1/checkpoint.npz",
+  "cycles": 2,
+  "period_ms": 900.0,
+  "filling_hold_ms": 100.0,
+  "checkpoint_every": 1000,
+  "fsi_config": "configs/gao2017/two_cycles_coarse_20261023/fsi.json",
+  "ep_config": "configs/gao2017/two_cycles_coarse_20261023/ep.json",
+  "ep_refinement_factor": 1,
+  "ode_step_ms": 0.001,
+  "spatial_config": "configs/gao2017/two_cycles_coarse_20261023/spatial.json",
+  "circulation_config": "configs/gao2017/two_cycles_coarse_20261023/circulation.json",
+  "port_config": "configs/gao2017/two_cycles_coarse_20261023/ports.json",
+  "diagnostics_config": "configs/gao2017/two_cycles_coarse_20261023/diagnostics.json",
+  "reuse_step_tangent": true,
+  "output": "results/afsei_two_cycles_coarse_900ms_20261023"
+}

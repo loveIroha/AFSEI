@@ -1,0 +1,6 @@
+{
+  "resume": "results/afsei_peak665_av060_20261019/diagnostics/tick_00013288/checkpoint.npz",
+  "geometry_anchor": "results/afsei_peak665_av060_20261019/diagnostics/tick_00010002/checkpoint.npz",
+  "output": "results/gao_cut_validation_20261026/ejection_conservative",
+  "steps": 3
+}

@@ -1,0 +1,7 @@
+{
+  "native_cache_fields": 30,
+  "production_cache_fields": 31,
+  "autonomous_rhs_reuse": true,
+  "per_node_independent_iteration": true,
+  "method_changed": false
+}

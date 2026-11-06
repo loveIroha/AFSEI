@@ -1,0 +1,254 @@
+{
+  "schema": "afsei-source-lv-v1",
+  "output": "results/lv_source_wk_deformation_feedback_20261104",
+  "maximum_time_s": 4.0,
+  "profile": false,
+  "config": {
+    "fsi": {
+      "source_dir": "/mnt/large2/gjh/realistic_left_ventricle",
+      "mesh_file": "mesh_scale.xdmf",
+      "boundary_file": "boundaries.xml",
+      "fiber_files": [
+        "fibers_0.xml",
+        "fibers_1.xml",
+        "fibers_2.xml"
+      ],
+      "sheet_files": [
+        "sheets_0.xml",
+        "sheets_1.xml",
+        "sheets_2.xml"
+      ],
+      "source_units": "cm",
+      "endo_tag": 2,
+      "epi_tag": 1,
+      "base_tag": 3,
+      "basal_center_cm": [
+        7.30042735,
+        7.6448494
+      ],
+      "beta": 1000000.0,
+      "solid_degree": 5,
+      "interaction_degree": 2,
+      "time": {
+        "dt": 0.0001,
+        "end_time": 0.0001
+      },
+      "fluid": {
+        "shape": [
+          128,
+          128,
+          128
+        ],
+        "lengths": [
+          13.0,
+          13.0,
+          13.0
+        ],
+        "origin": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rho": 1.0,
+        "mu": 0.04
+      },
+      "material": {
+        "a": 2400.0,
+        "b": 5.08,
+        "a_f": 14600.0,
+        "b_f": 4.15,
+        "a_s": 8700.0,
+        "b_s": 1.6,
+        "a_fs": 3000.0,
+        "b_fs": 1.3,
+        "kappa": 5000000.0,
+        "active_stretch_slope": 4.9
+      },
+      "loads": {
+        "target_mmhg": 0.0,
+        "ramp_seconds": 0.5
+      },
+      "load_protocol": "inflation",
+      "cyclic_loads": {
+        "period": 0.8,
+        "pressure_kpa": 1.067,
+        "pressure_increment_kpa": 13.46,
+        "tension_kpa": 84.26
+      },
+      "flow": {
+        "convection": true,
+        "helmholtz_rtol": 1E-12,
+        "helmholtz_atol": 1E-13,
+        "max_sweeps": 500,
+        "check_every": 4,
+        "helmholtz_backend": "graph",
+        "initial_sweeps": 0
+      },
+      "pressure_solver": {
+        "rtol": 1E-10,
+        "atol": 1E-12,
+        "max_cycles": 100,
+        "smooth": 4,
+        "check_every": 2
+      },
+      "mass_solver": {
+        "rtol": 1E-12,
+        "atol": 1E-13,
+        "max_iterations": 500,
+        "recompute_every": 40,
+        "check_every": 4
+      },
+      "interaction_quadrature": {
+        "mode": "adaptive",
+        "point_density": 2.0,
+        "max_order": 22,
+        "max_points": 12000000,
+        "rule_family": "xiao-gimbutas",
+        "transfer_backend": "fused",
+        "stencil_backend": "shared",
+        "prepare_backend": "triton",
+        "reuse_stencil_buffers": true,
+        "shared_execution": "reference"
+      },
+      "execution": {
+        "execution_backend": "fused",
+        "pressure_backend": "graph",
+        "solid_backend": "reference",
+        "mass_backend": "graph",
+        "coupling_backend": "optimized",
+        "warm_start": true,
+        "ib_backend": "reference"
+      },
+      "nonlinear_solver": "newton",
+      "newton_preconditioner": "none",
+      "ib_response_backend": "csr",
+      "ib_csr_assembly_backend": "cached-hash",
+      "ib_csr_contraction_backend": "cuda",
+      "ib_csr_chunk_entries": 1048576,
+      "ib_csr_max_entries": 32000000,
+      "support_backend": "vertices",
+      "nonlinear": {
+        "rtol": 1E-06,
+        "atol": 1E-09,
+        "max_iterations": 15,
+        "max_backtracks": 20,
+        "armijo": 0.0001,
+        "linear": {
+          "rtol": 0.001,
+          "atol": 1E-11,
+          "restart": 50,
+          "max_iterations": 240,
+          "check_every": 5,
+          "check_policy": "estimated",
+          "true_check_interval": 25
+        },
+        "linear_tolerance_fraction": 0.5,
+        "linear_forcing": "adaptive"
+      },
+      "anderson": {
+        "max_iterations": 6,
+        "history_size": 4,
+        "growth_limit": 4.0,
+        "regularization": 1E-12,
+        "extra_iterations": 0,
+        "extension_window": 3,
+        "extension_ratio": 0.8,
+        "stall_iterations": 0,
+        "stall_ratio": 0.95
+      },
+      "max_courant": 1.0,
+      "output": {
+        "log_every": 5,
+        "checkpoint_every": 100,
+        "output_every": 100,
+        "write_vtk": false,
+        "fluid_fields": true
+      }
+    },
+    "ep": {
+      "capacitance_uf_per_cm2": 1.0,
+      "surface_to_volume_per_cm": 0.1,
+      "conductivity_us_per_cm": [
+        0.117,
+        0.039,
+        0.039
+      ]
+    },
+    "ep_numerics": {
+      "discretization": "nodal_p1",
+      "backend": "torch_pcg_jacobi_light",
+      "solver": {
+        "rtol": 1E-10,
+        "atol": 1E-13,
+        "max_iterations": 1000,
+        "recompute_every": 40,
+        "check_every": 5
+      },
+      "time_scheme": "crank_nicolson",
+      "amg_profile": "size2",
+      "diffusion_quadrature": "nodal_p1"
+    },
+    "protocol": {
+      "dt_ep_s": 5E-05,
+      "pulse_starts_s": [
+        0.5
+      ],
+      "pulse_width_s": 0.002,
+      "amplitude_ua_per_cm2": 25.0,
+      "relaxation_s": 0.08,
+      "freeze_delay_s": 0.2,
+      "stable_s": 0.02,
+      "vm_tolerance_mv": 1.0,
+      "calcium_rest_relative_tolerance": 0.1,
+      "calcium_drift_relative_tolerance": 0.01,
+      "freeze_enabled": true
+    },
+    "dt_ode_ms": 0.001,
+    "ode_recovery": {
+      "enabled": false,
+      "max_refinement": 1024,
+      "rtol": 0.01,
+      "state_atol": 1E-09,
+      "current_atol": 0.001
+    },
+    "start_time_s": 0,
+    "max_retries": 4,
+    "direction_mapping": "l2-cg1",
+    "mechanics_profile": "source",
+    "prescribed_endocardial_pressure_mmhg": 0,
+    "ep_refinement_factor": 1,
+    "ep_refinement_cache": null,
+    "ep_deformation_feedback": "santiago2018"
+  },
+  "execution": {
+    "pressure_backend": "spectral",
+    "response_optimizations": true,
+    "closed_cap": false,
+    "circulation": {
+      "valve": {
+        "rmax": 10000.0,
+        "rmin": 0.001,
+        "epsilon_mmhg": 0.1,
+        "smooth": true
+      },
+      "fill_hold_s": 0.3,
+      "fill_pressure_mmhg": 8.0,
+      "flow_tolerance_ml_s": 1E-06,
+      "fill_rise_s": 0.2,
+      "beats": 2,
+      "initial_pc_mmhg": 85.0
+    }
+  },
+  "windkessel": {
+    "compliance_ml_per_mmhg": 1.3,
+    "rp_mmhg_s_per_ml": 1.05,
+    "rc_mmhg_s_per_ml": 0.05,
+    "venous_mmhg": 8.0
+  },
+  "reporting": {
+    "checkpoint_every": 1000,
+    "write_vtk": true,
+    "log_every": 50,
+    "vtk_every": 100
+  }
+}

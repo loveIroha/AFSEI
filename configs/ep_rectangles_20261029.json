@@ -1,0 +1,18 @@
+{
+  "lengths_cm": [2.0, 0.7, 0.3],
+  "spacing_cm": 0.025,
+  "dt_ep_s": 0.00005,
+  "dt_ode_ms": 0.002,
+  "duration_s": 0.08,
+  "stimulus_extent_cm": 0.15,
+  "stimulus_ua_cm2": 35.714285714285715,
+  "stimulus_duration_s": 0.002,
+  "nodal_backend": "amgx_pcg_amg",
+  "rtol": 1e-10,
+  "atol": 1e-13,
+  "parameters": {
+    "capacitance_uf_per_cm2": 1.0,
+    "surface_to_volume_per_cm": 0.1,
+    "conductivity_us_per_cm": [1.17, 0.39, 0.39]
+  }
+}

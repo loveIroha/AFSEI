@@ -263,15 +263,21 @@ class SourceLoadingHistory:
 Only converged nominal physical loading endpoints publish strain history.
 Intermediate numerical continuation states never advance this clock.
 """
-    def __init__(self,driver,target_mmhg=8.,duration_s=.5,steps=100):
+    def __init__(self,driver,target_mmhg=8.,duration_s=.5,steps=100,*,ramp_s=None):
         if type(steps)!=int or steps<1 or not isfinite(target_mmhg) or target_mmhg<=0 or not isfinite(duration_s) or duration_s<=0:
             raise ValueError('positive loading history pressure/duration and integer steps required')
         self.driver=driver; self.target=target_mmhg; self.duration=duration_s; self.steps=steps; self.accepted=0
+        self.ramp=duration_s if ramp_s is None else ramp_s
+        if not isfinite(self.ramp) or not 0<self.ramp<=duration_s:
+            raise ValueError('loading ramp must lie within the physical loading duration')
+        count=self.ramp/(duration_s/steps);self.ramp_steps=round(count)
+        if abs(count-self.ramp_steps)>1e-7 or self.ramp_steps<1:
+            raise ValueError('loading ramp must end on a nominal history sample')
         self.stretch=torch.ones_like(driver.mesh.X[:,0]); self.zs=torch.zeros_like(self.stretch); self.zw=self.zs.clone(); self.x=None
     @torch.no_grad()
     def observe(self,entry,x):
         from ..ep.land import distortion_step
-        p=entry['pressure_mmhg']; expected=self.target*(self.accepted+1)/self.steps
+        p=entry['pressure_mmhg']; expected=self.target*min(1.,(self.accepted+1)/self.ramp_steps)
         entry['physical_loading_endpoint']=False
         if p>expected+1e-10: raise ValueError('loading skipped a source strain-history endpoint')
         if abs(p-expected)>1e-10: return
@@ -285,6 +291,20 @@ Intermediate numerical continuation states never advance this clock.
         self.stretch,self.zs,self.zw,self.x=stretch,zs,zw,x.clone(); self.accepted+=1
         entry.update(physical_loading_endpoint=True,physical_loading_time_s=self.duration*self.accepted/self.steps,
             zs_max_abs=zs.abs().max().item(),zw_max_abs=zw.abs().max().item())
+    @torch.no_grad()
+    def observe_held_equilibrium(self,entry):
+        """Advance Z for an unchanged accepted equilibrium; no repeated FE solve."""
+        from ..ep.land import distortion_step
+        if self.x is None or not self.ramp_steps<=self.accepted<self.steps:
+            raise ValueError('hold requires a completed ramp and an unfilled history window')
+        if abs(entry['pressure_mmhg']-self.target)>1e-10:
+            raise ValueError('held equilibrium must retain the target pressure')
+        dt=self.duration/self.steps;zero=torch.zeros_like(self.stretch)
+        self.zs=distortion_step(self.zs,zero,dt,40.14)
+        self.zw=distortion_step(self.zw,zero,dt,405.86)
+        self.accepted+=1
+        entry.update(physical_loading_endpoint=True,physical_loading_time_s=self.duration*self.accepted/self.steps,
+            held_equilibrium_reused=True,zs_max_abs=self.zs.abs().max().item(),zw_max_abs=self.zw.abs().max().item())
     def final(self):
         if self.accepted!=self.steps or self.x is None: raise ValueError('incomplete source loading history')
         return PreloadStrainHistory(self.x,self.stretch,self.zs,self.zw,self.target,self.duration,self.steps)

@@ -1,0 +1,7 @@
+{
+  "checkpoint": "results/afsei_upgrade_20261029/systolic_connection_probe/diagnostic_checkpoint.npz",
+  "output": "results/lv_transport_audit_20261029/ejection_790p05",
+  "device": "cuda",
+  "dt_factors": [1.0, 0.5, 0.25, 0.125],
+  "advance_one_step": false
+}

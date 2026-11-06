@@ -1,0 +1,58 @@
+# ionic setup
+# ------------------------------------------------------------------------------
+
+num_imp_regions = 1
+imp_region[0].name = "Ventricle"
+imp_region[0].im   = Grandi
+# Grandi built-in defaults, including its EPI cell type; no TP parameters.
+imp_region[0].cellSurfVolRatio = 0.14
+imp_region[0].volFrac = 1
+
+
+# define conductivities
+# ------------------------------------------------------------------------------
+
+num_gregions    = 1
+gregion[0].g_il = 0.17
+gregion[0].g_it = 0.019
+gregion[0].g_in = 0.019
+gregion[0].g_el = 0.62
+gregion[0].g_et = 0.24
+gregion[0].g_en = 0.24
+
+# define stimulus
+# ------------------------------------------------------------------------------
+num_stim                = 1
+stim[0].elec.geom_type  = 2
+stim[0].elec.p0[0]      = 0
+stim[0].elec.p0[1]      = 0
+stim[0].elec.p0[2]      = 0
+stim[0].elec.p1[0]      = 1500
+stim[0].elec.p1[1]      = 1500
+stim[0].elec.p1[2]      = 1500
+stim[0].pulse.strength  = 35.71
+stim[0].ptcl.duration   = 2.00
+stim[0].ptcl.start      = 0.00
+
+# measure activation times
+# ------------------------------------------------------------------------------
+
+num_LATs             =         1
+lats[0].measurand    =         0
+lats[0].all          =         0
+lats[0].mode         =         0
+lats[0].threshold    =         0.
+lats[0].method       =         1
+
+# numerical settings
+# ------------------------------------------------------------------------------
+
+bidomain    = 0
+pstrat      = 2
+parab_solve = 1
+theta       = 0.5
+
+# I/O settings
+# ------------------------------------------------------------------------------
+
+spacedt = 1.

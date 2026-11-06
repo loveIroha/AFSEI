@@ -1,0 +1,7 @@
+{
+  "enabled": true,
+  "max_refinement": 1024,
+  "rtol": 0.01,
+  "state_atol": 1e-9,
+  "current_atol": 0.001
+}

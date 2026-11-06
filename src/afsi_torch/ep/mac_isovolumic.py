@@ -82,6 +82,13 @@ class IsovolumicProblem:
         if not torch.isfinite(p): raise FloatingPointError('nonfinite cavity pressure')
         self.driver.solid.validate(x)
 
+    def constraint(self, volume, pressure):
+        return (volume-self.control.target_volume_ml)/self.volume_scale
+
+    def constraint_derivatives(self, x, pressure):
+        c = closed_volume_gradient(x,self.load.faces,self.load.rim).flatten()/self.volume_scale
+        return c, x.new_zeros(())
+
     def residual(self, z):
         state_version = None if torch.is_inference(self.state.x) else self.state.x._version
         if (self.driver.owner.response_optimizations and self.last_z is not None
@@ -99,7 +106,7 @@ class IsovolumicProblem:
         nodal, interpolation = d.transfer.interpolate(velocity, self.stencil)
         volume = self.load.volume(x)
         residual = torch.cat(((y-d.flow.dt*nodal).flatten(),
-                              ((volume-self.control.target_volume_ml)/self.volume_scale).reshape(1)))
+                              self.constraint(volume,p).reshape(-1)))
         if not torch.isfinite(residual).all(): raise FloatingPointError('nonfinite isovolumic residual')
         self.pressure_initial = pressure
         self.last_z, self.last_residual = z.clone(), residual.clone()
@@ -118,9 +125,10 @@ class IsovolumicProblem:
         if d.assembler is None: d.assembler = d.model.tangent_factory()
         tangent = d.assembler.assemble(x, self.time)
         self.tangent_assemblies += 1
-        c = closed_volume_gradient(x,self.load.faces,self.load.rim).flatten()/self.volume_scale
+        c, pressure_diagonal = self.constraint_derivatives(x,p)
         b = self.response(self.load.force(x, 1.)).flatten()*self.pressure_scale
         self.c, self.b = c, b
+        self.pressure_diagonal = pressure_diagonal
         offset = p-d.owner.config.prescribed_endocardial_pressure_mmhg
         def action(v):
             self.jacobian_actions += 1
@@ -128,14 +136,14 @@ class IsovolumicProblem:
             df = torch.sparse.mm(tangent, dy.reshape(-1, 1)).reshape_as(x)
             df = df+self.load.action(x, offset, dy)
             mechanical = dy.flatten()+self.response(df).flatten()+b*v[-1]
-            return torch.cat((mechanical, (c@dy.flatten()).reshape(1)))
+            return torch.cat((mechanical, (c@dy.flatten()+pressure_diagonal*v[-1]).reshape(1)))
         return normalized_linear_action(action)
 
     def preconditioner(self, z):
         # Signed approximate Schur complement, with A approximately identity.
         # This changes only convergence; acceptance uses the full true residual.
         c, b = self.c, self.b
-        denominator = c@b
+        denominator = c@b-self.pressure_diagonal
         if not torch.isfinite(denominator) or denominator.abs() <= 1e-14:
             raise ValueError('singular isovolumic Schur complement')
         def apply(v):

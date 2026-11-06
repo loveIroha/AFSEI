@@ -1,0 +1,19 @@
+{
+  "demo": "lv-passive-validation",
+  "checkpoint": "results/afsei_two_cycles_fast_20261012_232652/checkpoint.npz",
+  "preload": "results/phase24_mac128_balanced_preload_final_v1/preload_result.npz",
+  "initial_state": "final",
+  "spatial_coupling": "griffith-luo-unified",
+  "pressure_backend": "multigrid",
+  "ib_response_backend": "quadrature",
+  "boundary_mode": "filling",
+  "pressure_mmhg": 8.0,
+  "dt_s": 0.0001,
+  "steps": 200,
+  "log_every": 10,
+  "budget_limit_ml": 0.1,
+  "equilibrium_pressure_tolerance_mmhg": 0.05,
+  "equilibrium_flow_tolerance_ml_s": 1.0,
+  "pressure_rtol": 1e-12,
+  "newton_linear_fraction": 0.1
+}

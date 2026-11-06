@@ -108,7 +108,7 @@ class MACBasalPorts:
     """
     @torch.no_grad()
     def __init__(self, reference_x, endocardial_faces, grid, *, ports=None,
-                 subdivision_level=4, area_rtol=.03, with_ports=True):
+                 subdivision_level=4, area_rtol=.03, with_ports=True, integration_rule='centroid'):
         if (reference_x.ndim != 2 or reference_x.shape[1] != 3 or reference_x.dtype != torch.float64
                 or not torch.isfinite(reference_x).all() or endocardial_faces.ndim != 2
                 or endocardial_faces.shape[1] != 3 or endocardial_faces.dtype != torch.int64
@@ -117,6 +117,9 @@ class MACBasalPorts:
                 or not isfinite(area_rtol) or not 0 < area_rtol <= .10
                 or type(with_ports) is not bool):
             raise ValueError('float64 P1 surface, subdivision level 0..6 and area tolerance in (0,.1] required')
+        if integration_rule not in ('centroid','gauss3','gauss7','gauss12'):
+            raise ValueError('cap integration_rule must be centroid, gauss3, gauss7 or gauss12')
+        self.integration_rule='centroid'  # Build the original material partition first.
         self.X = reference_x.detach().clone()
         self.endo = endocardial_faces.detach().clone()
         self.grid = grid
@@ -175,6 +178,39 @@ class MACBasalPorts:
             idealized_port_discs_present=with_ports,
             label_order=['non_port_cap', 'mv', 'av'],
             ports_imposed=False, cap_sealed=False, windkessel_ports_connected=False)
+        self.integration_rule=integration_rule
+        if integration_rule!='centroid':
+            # Retain the original labelled material subtriangles and their
+            # pressure-patch representatives. Only their integration changes.
+            self.partition_barycentric=self.barycentric
+            self.partition_parent=self.parent
+            self.partition_labels=self.labels
+            if integration_rule=='gauss3':
+                bary=self.X.new_tensor([[2/3,1/6,1/6],[1/6,2/3,1/6],[1/6,1/6,2/3]])
+                weights=self.X.new_full((3,),1/3)
+            elif integration_rule=='gauss7':
+                a,b=.059715871789770,.470142064105115
+                c,d=.797426985353087,.101286507323456
+                bary=self.X.new_tensor([[1/3]*3,[a,b,b],[b,a,b],[b,b,a],[c,d,d],[d,c,d],[d,d,c]])
+                weights=self.X.new_tensor([.225]+[.132394152788506]*3+[.125939180544827]*3)
+                weights/=weights.sum()
+            else:
+                # Positive degree-six symmetric triangle rule (12 points).
+                a,b=.249286745170910,.501426509658179
+                c,d=.063089014491502,.873821971016996
+                e,f,g=.310352451033785,.636502499121399,.053145049844816
+                bary=self.X.new_tensor([[b,a,a],[a,b,a],[a,a,b],[d,c,c],[c,d,c],[c,c,d],
+                    [e,f,g],[e,g,f],[f,e,g],[f,g,e],[g,e,f],[g,f,e]])
+                weights=self.X.new_tensor([.116786275726379]*3+[.050844906370207]*3+[.082851075618374]*6)
+                weights/=weights.sum()
+            n=len(weights); count=len(self.parent)
+            self.integration_parent=torch.arange(count,device=self.X.device).repeat_interleave(n)
+            self.integration_weights=weights.repeat(count)
+            self.barycentric=torch.einsum('qa,tab->tqb',bary,self.subtriangles).reshape(-1,3).repeat(len(self.rim),1)
+            self.parent=self.parent.repeat_interleave(n)
+            self.labels=self.labels.repeat_interleave(n)
+        self.metadata.update(integration_rule=integration_rule, surface_quadrature_points=len(self.barycentric),
+                             pressure_partition_subdivision_level=subdivision_level)
 
     def region_sum(self, value):
         return value.new_zeros((3, *value.shape[1:])).index_add(0, self.labels, value)
@@ -193,7 +229,16 @@ class MACBasalPorts:
         center = x[self.rim[:, 0]].mean(0)
         a, b = endpoints[:, 0], endpoints[:, 1]
         area = .5*torch.linalg.cross(b-a, center-a)
-        return self.material_points(x), area[self.parent]/len(self.subtriangles)
+        areas=area[self.parent]/len(self.subtriangles)
+        if self.integration_rule!='centroid': areas=areas*self.integration_weights[:,None]
+        return self.material_points(x), areas
+
+    def partition_points(self,x):
+        """Original centroid representatives; independent of integration rule."""
+        b=self.partition_barycentric
+        edges=x[self.rim[self.partition_parent]]
+        center=x[self.rim[:,0]].mean(0)
+        return b[:,:1]*edges[:,0]+b[:,1:2]*edges[:,1]+b[:,2:]*center
 
     @torch.no_grad()
     def prepare(self, x):
@@ -201,7 +246,8 @@ class MACBasalPorts:
         normal = areas.sum(0)
         if (not torch.isfinite(areas).all() or (areas@normal <= 0).any()):
             raise ValueError('current basal cap is folded or degenerate')
-        return PreparedBasalPorts(self, points, areas, prepare_flux_rows(self.grid, points, areas, self.labels))
+        return PreparedBasalPorts(self, points, areas, prepare_flux_rows(self.grid, points, areas, self.labels),
+            None if self.integration_rule=='centroid' else self.partition_points(x))
 
 
 @dataclass(frozen=True)
@@ -210,6 +256,7 @@ class PreparedBasalPorts:
     points: torch.Tensor
     area_vectors: torch.Tensor
     rows: MACFluxRows
+    partition_points: torch.Tensor | None = None
 
     def material_flow(self, nodal_velocity):
         return self.cap.region_sum((self.cap.material_points(nodal_velocity)*self.area_vectors).sum(-1))

@@ -1,5 +1,11 @@
-"""Lazy GPB/Land CUDA extension; imports and monodomain PDE do not compile it."""
+"""Lazy nodal GPB/Land CUDA execution; original FP64 SDIRK arithmetic.
+
+Frozen-voltage coefficients and autonomous endpoint derivatives are reused.
+The source equations and reference CUDA kernel remain separately identifiable.
+"""
 from pathlib import Path
+import hashlib
+import json
 import threading
 import torch
 
@@ -24,7 +30,11 @@ def build(verbose=False):
             raise RuntimeError('set CUDA_HOME to a toolkit compatible with PyTorch')
         _validate_toolkit(CUDA_HOME, torch.version.cuda)
         folder = Path(__file__).parent/'csrc'
-        load(name='afsei_ep_cuda', sources=[str(folder/f) for f in ('tissue.cpp', 'tissue.cu')],
+        provenance=json.loads((folder/'gpb_node_provenance.json').read_text())
+        for name,expected in provenance['source_files_sha256'].items():
+            if hashlib.sha256((folder/name).read_bytes()).hexdigest()!=expected:
+                raise RuntimeError('GPB source changed; regenerate execution with scripts/generate_gpb_node_cuda.py')
+        load(name='afsei_ep_cuda_node_v2', sources=[str(folder/f) for f in ('tissue.cpp', 'tissue_node.cu')],
              extra_cflags=['-O3'], extra_cuda_cflags=['-O3', '--fmad=false', '-lineinfo'],
              is_python_module=False, verbose=verbose)
         _loaded = True

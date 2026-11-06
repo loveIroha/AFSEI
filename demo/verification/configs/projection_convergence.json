@@ -1,0 +1,8 @@
+{
+  "checkpoint": "/mnt/large2/gjh/AFSEI/results/single_tube_full_20261024/active_120ms/final_state.npz",
+  "source_config": "/mnt/large2/gjh/AFSEI/results/single_tube_full_20261024/active_120ms/config.resolved.json",
+  "output": "/mnt/large2/gjh/AFSEI/results/projection_convergence_20261025",
+  "device": "cuda:0",
+  "factors": [1, 2, 3],
+  "chunk_points": 16384
+}

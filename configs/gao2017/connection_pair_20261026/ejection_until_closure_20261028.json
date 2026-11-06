@@ -1,0 +1,15 @@
+{
+  "resume": "results/gao_cut_cycle_validation_20261026/ejection_20ms_20261028/checkpoint.npz",
+  "duration_ms": 400.0,
+  "stop_after_event": {
+    "name": "OUTLET_CLOSURE_TA_SNAPSHOT",
+    "advance_ms": 0.0
+  },
+  "cut_pressure_solver": {"rtol": 1e-12, "atol": 1e-14},
+  "tract_geometry_gpu": true,
+  "pressure_compact_geometry": false,
+  "cut_diagnostics_every": 10,
+  "checkpoint_every": 25,
+  "verify_restart": false,
+  "output": "results/gao_cut_cycle_validation_20261026/ejection_until_closure_20261028"
+}

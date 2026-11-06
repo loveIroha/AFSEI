@@ -1,0 +1,118 @@
+{
+  "demo": "active-tube-2d",
+  "geometry": {
+    "length_cm": 2.4,
+    "lumen_height_cm": 0.6,
+    "wall_thickness_cm": 0.1,
+    "inlet_buffer_cm": 0.4,
+    "center_y_cm": 0.8,
+    "axial_elements": 48,
+    "thickness_elements": 2
+  },
+  "fluid": {
+    "shape": [
+      64,
+      32
+    ],
+    "lengths_cm": [
+      3.2,
+      1.6
+    ],
+    "density_g_per_cm3": 1.025,
+    "viscosity_dyn_s_per_cm2": 0.04,
+    "end_boundary": "zero-inlet-pressure-rc-outlet",
+    "outer_y_boundary": "reference-pressure-vent-between-septa",
+    "inlet_pressure_dyn_per_cm2": 0.0,
+    "outlet_pressure_dyn_per_cm2": 0.0
+  },
+  "solid": {
+    "shear_modulus": 100000.0,
+    "lame_lambda": 200000.0,
+    "end_spring": 1000000.0,
+    "end_condition": "fixed-sealing-collars"
+  },
+  "active": {
+    "mechanism": "paired-hoop-land",
+    "rest_reference": "land-equilibrium-increment",
+    "tension_scale": 0.02,
+    "end_taper_cm": 0.1,
+    "stretch_model": "plane-strain-isometric",
+    "end_inactive_cm": 0.2
+  },
+  "ep": {
+    "parameters": {
+      "capacitance_uf_per_cm2": 1.0,
+      "surface_to_volume_per_cm": 1400,
+      "conductivity_us_per_cm": [
+        1334.1772151898733,
+        176.06177606177604,
+        176.06177606177604
+      ]
+    },
+    "numerics": {
+      "discretization": "consistent_p1",
+      "backend": "torch_pcg_jacobi_light",
+      "time_scheme": "crank_nicolson",
+      "solver": {
+        "rtol": 1e-10,
+        "atol": 1e-13,
+        "max_iterations": 500,
+        "check_every": 5,
+        "recompute_every": 40
+      },
+      "diffusion_quadrature": "consistent_p1"
+    },
+    "ode_method": "explicit_euler"
+  },
+  "stimulus": {
+    "start_s": 0.0,
+    "duration_s": 0.002,
+    "width_cm": 0.1,
+    "amplitude_ua_per_cm2": 35.714285714285715
+  },
+  "time": {
+    "fsi_dt_s": 1e-05,
+    "ep_dt_s": 2e-05,
+    "ode_dt_ms": 0.001,
+    "end_time_s": 0.02,
+    "stop_on_no_contact_limit": true
+  },
+  "solver": {
+    "pressure_backend": "graph",
+    "mass_backend": "graph",
+    "ib_backend": "cuda",
+    "pressure": {
+      "rtol": 1e-10,
+      "atol": 1e-11,
+      "max_cycles": 100,
+      "smooth": 4,
+      "check_every": 2
+    },
+    "mass": {
+      "rtol": 1e-11,
+      "atol": 1e-12,
+      "max_iterations": 500,
+      "check_every": 4
+    }
+  },
+  "output": {
+    "log_every": 200,
+    "field_every": 200,
+    "write_vtk": true,
+    "wave_sections": true
+  },
+  "circulation": {
+    "model": "sharifi-2021-rc",
+    "resistance_mmhg_s_per_mm3": 60.0,
+    "compliance_mm3_per_mmhg": 0.26,
+    "initial_pressure_mmhg": 0.0,
+    "outlet_scope": "x-high-full-box-face",
+    "extrusion_depth_cm": 1.0
+  },
+  "hydraulic_domain": {
+    "kind": "sealed-end-reservoirs",
+    "aperture_margin_cells": 0.25,
+    "collar_cells": 2,
+    "pressure_max_iterations": 200
+  }
+}

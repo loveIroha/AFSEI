@@ -1,0 +1,5 @@
+{
+  "source_sha256": "aea0ef251807e1d7d6e00e6137fed0c3a4ba5832c57665b34b12c9fa27050af5",
+  "generated_sha256": "2f076b78d63dcebbe04f0ce8d730bfe24118f81f4afa6696bdf450b38f746284",
+  "change": "Only exprel limits of late-Na gate, d gate and GHK currents; equations and parameters unchanged"
+}

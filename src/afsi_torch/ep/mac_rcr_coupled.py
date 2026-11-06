@@ -35,7 +35,8 @@ def outlet_rows(endpoint, x, *, label=2):
     """Retain local closed patches, plus ONE row for the entire idealized AV."""
     if not hasattr(endpoint, '_outlet_cap'):
         endpoint._outlet_cap = MACBasalPorts(endpoint.model.mesh.X,
-            endpoint.model.endo_faces, endpoint.grid, ports=endpoint.owner.port_geometry)
+            endpoint.model.endo_faces, endpoint.grid, ports=endpoint.owner.port_geometry,
+            integration_rule=getattr(endpoint.owner,'cap_integration_rule','centroid'))
     p = endpoint._outlet_cap.prepare(x)
     closed = prepare_local_cap(p, patch_width_cells=endpoint.owner.cap_patch_width_cells,
                               regions=tuple(k for k in (0,1,2) if k != label))

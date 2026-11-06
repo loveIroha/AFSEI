@@ -1,0 +1,53 @@
+{
+  "software_version": "openCARP v20.0",
+  "software_git": "ffce19513ca90235192fff261160f53167921877",
+  "official_example_source": "/mnt/large2/gjh/openCARP/external/experiments/tutorials/02_EP_tissue/03E_study_resolution",
+  "official_example_git": "3c5c7dc4f9e69995e7d85316edf5279c1e3f3f9b",
+  "geometry_mm": [
+    20,
+    7,
+    3
+  ],
+  "dx_mm": 0.0625,
+  "dx_um": 62.5,
+  "fiber_direction": [
+    1,
+    0,
+    0
+  ],
+  "boundary_condition": "homogeneous zero flux on every tissue boundary",
+  "stimulus_box_mm": [
+    [
+      0,
+      0,
+      0
+    ],
+    [
+      1.5,
+      1.5,
+      1.5
+    ]
+  ],
+  "stimulus_uA_per_cm2": 35.71,
+  "stimulus_start_ms": 0,
+  "stimulus_duration_ms": 2,
+  "dt_us": 20,
+  "duration_ms": 50,
+  "mass_lumping": 0,
+  "theta": 0.5,
+  "ionic_model": "Grandi (GPB ventricular 2010)",
+  "initial_state": "built-in Grandi defaults, not ten Tusscher singlecell.sv; no extra preconditioning",
+  "physical_changes": [
+    "dx 100 -> 62.5 um",
+    "tenTusscherPanfilov -> Grandi and its matching initial state"
+  ],
+  "original_file_sha256": {
+    "run.py": "0d67952228f4e4ecebd24055b0d66be4a4060a6bf6406c85b91ace4877da700f",
+    "nversion.par": "672912b618a9c013e6d0bd0d1e8c35ab4fac701057de6179bceb15222b2c4ae6",
+    "singlecell.sv": "88167d2e71b2c0a2265f40a9b2c86a6e69aebbd6c48ec0131a73488f45cc8693"
+  },
+  "carputils_git": "49bc2a4eabc5efc019aab174142ddf89fda18812",
+  "mesh_path": "/mnt/large2/gjh/AFSEI/demo/opencarp_niederer_gpb/meshes/2026-10-31_DFomLswsrX/block",
+  "execution_note": "Exact carputils commit pinned by openCARP v20.0; reuse existing native mesh",
+  "simulation_directory": "/mnt/large2/gjh/AFSEI/results/opencarp_gpb_h0p0625_20261030/simulation_v2"
+}

@@ -22,7 +22,7 @@ def parse_args(argv=None):
     p.add_argument('--nonlinear-solver',choices=('jfnk','newton','anderson-newton'))
     p.add_argument('--profile',action='store_true',help='synchronize GPU for per-stage timing; includes cold starts and retries')
     p.add_argument('--ep-discretization',choices=('nodal_p1','consistent_p1'))
-    p.add_argument('--ep-backend',choices=('amgx_pcg_amg','torch_pcg_jacobi'))
+    p.add_argument('--ep-backend',choices=('amgx_pcg_amg','torch_pcg_jacobi','torch_pcg_jacobi_light'))
     p.add_argument('--ep-config',type=Path)
     p.add_argument('--start-ms',type=float,default=500.)
     p.add_argument('--mechanics',choices=('source','inherited'),default='source',
@@ -48,7 +48,7 @@ def fresh_config(args):
     factory = AFSEIConfig.source if args.mechanics == 'source' else AFSEIConfig
     return factory(fsi=fsi,start_time_s=args.start_ms/1000,
         ep_numerics=load_config(args.ep_config,MonodomainNumerics) if args.ep_config else
-            MonodomainNumerics(args.ep_discretization or 'nodal_p1',args.ep_backend or 'amgx_pcg_amg'))
+            MonodomainNumerics(args.ep_discretization or 'nodal_p1',args.ep_backend or 'torch_pcg_jacobi_light'))
 
 
 def main():

@@ -1,0 +1,6 @@
+cmake_minimum_required(VERSION 3.15)
+project(AFSEI_IBAMR_comparison LANGUAGES C CXX)
+find_package(IBAMR 0.19 REQUIRED HINTS ${IBAMR_BUILD}/cmake)
+add_executable(afsei_ibamr_tube tube.cpp)
+target_compile_features(afsei_ibamr_tube PRIVATE cxx_std_17)
+target_link_libraries(afsei_ibamr_tube PRIVATE IBAMR::IBAMR3d)

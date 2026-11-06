@@ -181,3 +181,13 @@ python demo/active_tube_2d/plot.py results/my_active_tube \
 主 EP、ODE、传递、多重网格及二维 FSI 求解器均直接调用库模块。
 
 实际 GPU 检查和结果另见 `VALIDATION.md`。
+
+
+## Sharifi RC boundary-validation stage (2026-10-23)
+
+A separate `configs/tube_sharifi_rc_gpu.json` connects the implicit two-element RC outlet from Sharifi (2021), Eq. (2), with no porous domain. See [Chinese scope, units and commands](SHARIFI_RC_zh.md). This loads the outer MAC box face; the immersed tube mouths, exterior fluid and original single-layer geometry have not yet been aligned with the paper. This stage does not establish quantitative reproduction.
+
+
+## Isolated hydraulic path update
+
+`configs/tube_sharifi_rc_gpu.json` now selects sealed end reservoirs and fixed normal-flux septa/collars. Use [current scope and numerical boundary details](SEALED_PORTS_zh.md). The former unpartitioned box-RC case is retained as `configs/tube_box_rc_legacy_gpu.json`. Flexible-wall material/EP and FE/IB transfer are unchanged. The MAC pressure operator now enforces the fixed partitions, using Galerkin-MG-preconditioned PCG. The geometry is still centimeter-scale and single-layer; it is not a Sharifi reproduction.

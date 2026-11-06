@@ -15,7 +15,7 @@ from .solid import EPDrivenPaperSolid
 from .buffered_load import BufferedLandLoad,ActiveLoadState
 from .monodomain import Monodomain
 from .tissue import GPBLand,TissueState,initial_state
-from .mapping import source_p1_fields
+from .mapping import source_p1_fields, l2_project_cell_fields, orthonormalize_directions
 from .protocol import CycleState,ticks,recovery_ready
 from .land import distortion_step
 
@@ -77,11 +77,25 @@ class AFSEIStepper:
         self.model = EPDrivenPaperSolid(mesh,config.fsi,self.buffer,
             source_quadrature=config.mechanics_profile == 'source',
             prescribed_pressure_mmhg=config.prescribed_endocardial_pressure_mmhg)
-        if config.direction_mapping == 'source-serial-cg1':
+        self.ep_transfer = None
+        if config.direction_mapping in ('source-serial-cg1','l2-cg1'):
             fiber,sheet,self.stimulus_mask,self.mapping_owner = source_p1_fields(mesh)
-            self.ep = Monodomain(mesh.X,mesh.cells,fiber,sheet,directions='nodal',parameters=config.ep,
-                                 numerics=config.ep_numerics)
+            if config.direction_mapping == 'l2-cg1':
+                projected = l2_project_cell_fields(mesh.X,mesh.cells,
+                                                   torch.cat((mesh.fiber,mesh.sheet),dim=1))
+                fiber,sheet = projected.split(mesh.X.shape[1],dim=1)
+                fiber,sheet,_ = orthonormalize_directions(fiber,sheet)
+            if config.ep_refinement_factor>1:
+                from .refined_mesh import RefinedMonodomain
+                self.ep=RefinedMonodomain(mesh,config,fiber,sheet,self.stimulus_mask,passive.geometry)
+                self.ep_transfer=self.ep.transfer
+                self.stimulus_mask=self.ep.stimulus
+                self.buffer.field_transfer=self.ep_transfer
+            else:
+                self.ep = Monodomain(mesh.X,mesh.cells,fiber,sheet,directions='nodal',parameters=config.ep,
+                                     numerics=config.ep_numerics)
         else:
+            if config.ep_refinement_factor>1:raise ValueError('refined EP requires source P1 direction mapping')
             self.ep = Monodomain(mesh.X,mesh.cells,mesh.fiber,mesh.sheet,directions='cell',parameters=config.ep,
                                  numerics=config.ep_numerics)
             self.stimulus_mask = torch.zeros(n,dtype=torch.bool,device=mesh.X.device)
@@ -90,8 +104,8 @@ class AFSEIStepper:
         # Fail at initialization if the explicitly selected backend is missing;
         # never treat dependency/setup errors as physical step-size retries.
         self.ep.prepare(config.protocol.dt_ep_s)
-        self.ode = GPBLand(config.protocol.dt_ep_s,config.dt_ode_ms)
-        resting = initial_state(mesh.X[:,0])
+        self.ode = GPBLand(config.protocol.dt_ep_s,config.dt_ode_ms,recovery=config.ode_recovery)
+        resting = initial_state(self.ep.X[:,0])
         self.rest_voltage = resting.voltage_v
         self.rest_calcium = resting.gpb[:,37].clone()
         self.maximum_ticks = ticks(config.fsi.time.dt,self.protocol.dt_ep_s)
@@ -100,6 +114,12 @@ class AFSEIStepper:
         # Runtime instrumentation is deliberately absent from physical checkpoints.
         self.profile = False
         self._last_attempt_timings = {}
+
+    def prolong_ep(self,value):
+        return value if self.ep_transfer is None else self.ep_transfer.prolong(value)
+
+    def land_stretch(self,cell_stretch):
+        return self.prolong_ep(self.ep.project_cell_field(cell_stretch))
 
     @contextmanager
     def _stage(self,name):
@@ -127,10 +147,13 @@ class AFSEIStepper:
     def initialize(self,x=None,tissue=None):
         x = self.mesh.X if x is None else x
         self.model.validate(x)
-        tissue = initial_state(x[:,0]) if tissue is None else tissue
+        if self.config.ep_deformation_feedback=='santiago2018':
+            self.ep.update_deformation(x)
+        tissue = initial_state(self.ep.X[:,0]) if tissue is None else TissueState(
+            *(self.prolong_ep(v) for v in (tissue.voltage_v,tissue.gpb,tissue.land)))
         F = self.model.element_gradient(x)
         cell_stretch = torch.linalg.vector_norm(torch.einsum('eij,ej->ei',F,self.mesh.fiber),dim=-1)
-        stretch = self.ep.project_cell_field(cell_stretch)
+        stretch = self.land_stretch(cell_stretch)
         zero = torch.zeros_like(stretch)
         self.ode._validate(tissue,stretch,zero,zero,self.config.start_time_s)
         start = ticks(self.config.start_time_s,self.protocol.dt_ep_s)
@@ -177,8 +200,12 @@ class AFSEIStepper:
         current = old.ionic_current
         live = old.cycle.ep_live(old.tick,self.protocol)
         ep_steps = 0; max_ratio = 0.; ep_iterations = 0
+        ode_recovery_events = []
         self._last_attempt_timings = {}
         try:
+            if live and self.config.ep_deformation_feedback=='santiago2018':
+                with self._stage('ep_geometry_seconds'):
+                    self.ep.update_deformation(old.fsi.x)
             for left in range(old.tick,end):
                 if not live: continue
                 stim = self.protocol.stimulus(left,self.stimulus_mask,tissue.voltage_v)
@@ -192,6 +219,8 @@ class AFSEIStepper:
                 else:
                     tissue,current,ep_info = self.ode.step(self.ep,tissue,old.strain.stretch,old.strain.zs,
                         old.strain.zw,left*self.protocol.dt_ep_s,stim,advance_land=old.cycle.mode == 'land')
+                if self.ode.last_recovery is not None:
+                    ode_recovery_events.append(self.ode.last_recovery)
                 ep_steps += 1
                 ep_iterations += ep_info.iterations
                 max_ratio = max(max_ratio,ep_info.residual_norm/ep_info.tolerance)
@@ -211,7 +240,7 @@ class AFSEIStepper:
                 with self._stage('strain_feedback_seconds'):
                     F = self.model.element_gradient(fsi.x)
                     cell_stretch = torch.linalg.vector_norm(torch.einsum('eij,ej->ei',F,self.mesh.fiber),dim=-1)
-                    stretch = self.ep.project_cell_field(cell_stretch)
+                    stretch = self.land_stretch(cell_stretch)
                     if (stretch <= 0).any():
                         raise FloatingPointError('nonpositive projected Land stretch')
                     advance_z = old.tick < self.protocol.pulse_ticks[0] or old.cycle.mode == 'land'
@@ -245,6 +274,7 @@ class AFSEIStepper:
                 cycle = CycleState(mode='land',resting_land=resting_land)
             new = CoupledState(end,fsi,tissue,strain,cycle,load,current,old.rejected_attempts)
             info['ep'] = dict(steps=ep_steps,ode_substeps=ep_steps*self.ode.substeps,
+                ode_recovery_events=ode_recovery_events,
                 discretization=self.ep.numerics.discretization,backend=self.ep.numerics.backend,
                 pcg_iterations=ep_iterations,max_residual_to_tolerance=max_ratio,
                 land_advanced=live and old.cycle.mode == 'land',ep_live=live,recovery=recovery)

@@ -1,0 +1,150 @@
+{
+  "demo": "active-tube-3d",
+  "description": "Small multi-step implementation verification; nonzero electrical initial condition, common cell ODE kernels, independent external EP/FSI",
+  "geometry": {
+    "length_cm": 2.0,
+    "inner_radius_cm": 0.3,
+    "wall_thickness_cm": 0.1,
+    "center_xy_cm": [
+      0.7,
+      0.7
+    ],
+    "axial_start_cm": 0.4,
+    "axial_elements": 8,
+    "circumferential_elements": 16,
+    "thickness_elements": 1
+  },
+  "fluid": {
+    "shape": [
+      16,
+      16,
+      32
+    ],
+    "lengths_cm": [
+      1.4,
+      1.4,
+      2.8
+    ],
+    "origin_cm": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "density_g_per_cm3": 1.0,
+    "viscosity_dyn_s_per_cm2": 0.04,
+    "boundary": "zero-pressure-neumann-velocity-all-box-faces"
+  },
+  "solid": {
+    "young_modulus_dyn_cm2": 300000.0,
+    "poisson_ratio": 0.3,
+    "end_condition": "full-reference-surface-spring-approximation",
+    "end_spring_dyn_cm3": 1000000.0
+  },
+  "active": {
+    "mechanism": "circumferential-land-pk1",
+    "rest_reference": "land-equilibrium-increment",
+    "tension_scale": 1.0,
+    "end_taper_cm": 0.15,
+    "minimum_radius_ratio": 0.2,
+    "stretch_feedback": "isometric-driver"
+  },
+  "ep": {
+    "conductivity_direction": "axial-z",
+    "boundary": "insulating-all-wall-surfaces",
+    "parameters": {
+      "capacitance_uf_per_cm2": 1.0,
+      "surface_to_volume_per_cm": 0.1,
+      "conductivity_us_per_cm": [
+        0.117,
+        0.039,
+        0.039
+      ]
+    },
+    "numerics": {
+      "discretization": "nodal_p1",
+      "backend": "torch_pcg_jacobi_light",
+      "time_scheme": "crank_nicolson",
+      "solver": {
+        "rtol": 1e-11,
+        "atol": 1e-14,
+        "max_iterations": 500,
+        "check_every": 5
+      }
+    }
+  },
+  "stimulus": {
+    "start_s": 0.0,
+    "duration_s": 0.002,
+    "width_cm": 0.1,
+    "amplitude_ua_per_cm2": 0.0
+  },
+  "time": {
+    "fsi_dt_s": 5e-05,
+    "ep_dt_s": 5e-05,
+    "ode_dt_ms": 0.002,
+    "end_time_s": 0.002
+  },
+  "fsi": {
+    "spatial_coupling": "griffith-luo-2017-unified",
+    "time_scheme": "be-be",
+    "execution": {
+      "execution_backend": "fused",
+      "pressure_backend": "graph",
+      "mass_backend": "graph",
+      "warm_start": true
+    },
+    "flow": {
+      "convection": true,
+      "helmholtz_backend": "graph",
+      "helmholtz_rtol": 1e-12,
+      "helmholtz_atol": 1e-13,
+      "max_sweeps": 500,
+      "check_every": 4
+    },
+    "pressure_solver": {
+      "rtol": 1e-10,
+      "atol": 1e-11,
+      "max_cycles": 100,
+      "smooth": 4,
+      "check_every": 2
+    },
+    "mass_solver": {
+      "rtol": 1e-11,
+      "atol": 1e-12,
+      "max_iterations": 500,
+      "check_every": 4
+    },
+    "interaction_quadrature": {
+      "mode": "adaptive",
+      "point_density": 2.0,
+      "max_order": 12,
+      "max_points": 12000000,
+      "rule_family": "xiao-gimbutas",
+      "transfer_backend": "fused",
+      "stencil_backend": "shared",
+      "prepare_backend": "triton",
+      "reuse_stencil_buffers": true
+    },
+    "nonlinear_solver": "newton",
+    "nonlinear": {
+      "rtol": 1e-08,
+      "atol": 1e-11,
+      "max_iterations": 15,
+      "linear_tolerance_fraction": 0.05,
+      "linear": {
+        "rtol": 0.001,
+        "atol": 1e-11,
+        "restart": 40,
+        "max_iterations": 240,
+        "check_every": 5
+      }
+    },
+    "max_courant": 1.0
+  },
+  "output": {
+    "log_every": 100,
+    "field_every": 200,
+    "checkpoint_every": 400,
+    "write_vtk": true
+  }
+}

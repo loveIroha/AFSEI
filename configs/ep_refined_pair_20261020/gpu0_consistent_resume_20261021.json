@@ -1,0 +1,8 @@
+{
+  "physical_gpu": 0,
+  "resume": "results/afsei_two_cycles_ep3_consistent_nodal_cn_20261020/checkpoint.npz",
+  "ode_recovery_config": "configs/ep_refined_pair_20261020/ode_recovery_failed_nodes.json",
+  "checkpoint_every": 1000,
+  "diagnostics_config": "configs/ep_refined_pair_20261020/diagnostics.json",
+  "output": "results/afsei_two_cycles_ep3_consistent_nodal_cn_recovered_20261021"
+}

@@ -1,0 +1,10 @@
+{
+  "resume": "results/gao_cut_cycle_validation_20261026/ep_fsi_2ms/checkpoint.npz",
+  "duration_ms": 0.15,
+  "validation_step_ms": 0.05,
+  "pressure_compact_geometry": false,
+  "tract_geometry_gpu": true,
+  "checkpoint_every": 3,
+  "verify_restart": true,
+  "output": "results/gao_cut_cycle_validation_20261026/gpu_geometry_step"
+}

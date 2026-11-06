@@ -1,0 +1,10 @@
+{
+  "resume": "results/gao_cut_cycle_validation_20261026/gpu_geometry_step/checkpoint.npz",
+  "duration_ms": 120.0,
+  "stop_after_event": {"name": "PHYSICAL_AV_OPENING", "advance_ms": 2.0},
+  "tract_geometry_gpu": true,
+  "pressure_compact_geometry": false,
+  "checkpoint_every": 25,
+  "verify_restart": true,
+  "output": "results/gao_cut_cycle_validation_20261026/first_opening_20261026"
+}

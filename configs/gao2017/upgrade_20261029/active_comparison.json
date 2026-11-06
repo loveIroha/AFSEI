@@ -1,0 +1,5 @@
+{
+  "checkpoint": "results/gao_cut_cycle_validation_20261026/ejection_until_closure_20261028/last_accepted_checkpoint.npz",
+  "pressures_mmhg": [8.0, 100.0],
+  "output": "results/afsei_upgrade_20261029/matched_active_load"
+}

@@ -1,0 +1,7 @@
+{
+  "spatial_coupling": "griffith-luo-unified",
+  "pressure_backend": "multigrid",
+  "ib_response_backend": "quadrature",
+  "fluid_solver": "be-projection",
+  "cap_integration_rule": "gauss12"
+}

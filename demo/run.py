@@ -12,7 +12,9 @@ ENTRIES={'ideal-lv-mac':'ideal_lv_fsi/run_mac.py',
          'ep-slab-model-comparison':'ep_slab/run_model_comparison.py',
          'ep-pde-methods-benchmark':'ep_slab/benchmark_pde_methods.py',
          'ep-native-pair-benchmark':'ep_slab/benchmark_native_pair.py',
-         'active-tube-2d':'active_tube_2d/run.py'}
+         'active-tube-2d':'active_tube_2d/run.py',
+         'active-tube-3d':'active_tube_3d/run.py',
+         'lv-passive-validation':'lv_passive_validation/run.py'}
 
 def main(argv=None):
     p=argparse.ArgumentParser(description=__doc__)

@@ -1,0 +1,23 @@
+{
+  "physical_gpu": 1,
+  "start_time_ms": 1011.8,
+  "pre_stimulus_time_ms": 1299.9,
+  "end_time_ms": 1300.0,
+  "reference_edv_ml": 136.789324324183,
+  "output": "results/gao_filling_to1300_20261022",
+  "scope": "continue the completed paired filling diagnostic; preserve original pacing and save a pre-stimulus state",
+  "cases": [
+    {
+      "name": "baseline",
+      "resume": "results/gao_filling_ramp_20261022/baseline/checkpoint.npz",
+      "first_segment": "results/gao_filling_ramp_20261022/baseline",
+      "inlet_ramp_fraction": 1.0
+    },
+    {
+      "name": "early",
+      "resume": "results/gao_filling_ramp_20261022/early/checkpoint.npz",
+      "first_segment": "results/gao_filling_ramp_20261022/early",
+      "inlet_ramp_fraction": 0.1
+    }
+  ]
+}

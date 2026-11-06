@@ -336,8 +336,10 @@ class BEIBStepper:
         # Frozen OLD geometry, not midpoint or new geometry.
         stencil = self.transfer.prepare(state.x)
         departure = self.flow.advect(state.velocity)
-        problem = BEProblem(self, state, stencil, departure)
+        problem = getattr(self,'problem_factory',BEProblem)(self, state, stencil, departure)
         initial = torch.zeros_like(state.x) if state.previous_x is None else state.x-state.previous_x
+        if hasattr(problem,'initial'):
+            initial = problem.initial(initial)
         before = self.flow.calls
         mass_before,mass_iterations_before = self.mass_calls,self.mass_iterations
         cycles_before,sweeps_before = self.flow.pressure_cycles,self.flow.helmholtz_sweeps
@@ -378,7 +380,9 @@ class BEIBStepper:
             newton_preconditioner=self.config.newton_preconditioner,
             **dict(solver_counts, solver=solver)),
             flow=flow, force_mass=asdict(spread), velocity_mass=asdict(interpolation), courant=courant,
-            max_grid_displacement=(result.x.abs()/x.new_tensor(self.grid.spacing)).max().item())
+            max_grid_displacement=((x-state.x).abs()/x.new_tensor(self.grid.spacing)).max().item())
+        if hasattr(self,'basal_support'):
+            info['basal_support']=self.last_support_report
         linear_history = [entry['linear'] for entry in result.history if 'linear' in entry]
         info['nonlinear']['gmres_iterations'] = (sum(h['iterations'] for h in linear_history)
                                                if solver != 'jfnk' else 0)

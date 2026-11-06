@@ -1,0 +1,19 @@
+{
+  "demo": "lv-passive-validation",
+  "checkpoint": "results/afsei_two_cycles_wall_fill/checkpoint.npz",
+  "preload": "results/phase24_mac128_balanced_preload_final_v1/preload_result.npz",
+  "initial_state": "preload",
+  "spatial_coupling": "legacy-balanced",
+  "pressure_backend": "spectral",
+  "ib_response_backend": "csr",
+  "boundary_mode": "filling",
+  "pressure_mmhg": 0.0,
+  "wall_pressure_mmhg": 8.0,
+  "cap_reference_mmhg": 8.0,
+  "dt_s": 0.0001,
+  "steps": 3,
+  "log_every": 1,
+  "budget_limit_ml": 0.000001,
+  "equilibrium_pressure_tolerance_mmhg": 0.05,
+  "equilibrium_flow_tolerance_ml_s": 1.0
+}

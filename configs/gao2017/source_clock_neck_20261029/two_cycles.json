@@ -1,0 +1,18 @@
+{
+  "reference_checkpoint": "results/afsei_two_cycles_coarse_900ms_20261023/diagnostics/tick_00027998/checkpoint.npz",
+  "preload_history": "results/afsei_source_neck_preload_200ramp_300hold_20261029/preload_history.npz",
+  "circulation_config": "configs/gao2017/two_cycles_coarse_20261023/circulation.json",
+  "cycles": 2,
+  "cut_geometry": {"shared_collar_cells": 3, "neck_corner_trim_cells": 1},
+  "filling_clock": {"duration_s": 0.2, "inlet_ramp_s": 0.2, "wall_peak_s": 0.1, "hold_s": 0.3, "loading_mode": "source-wall", "pacing_mode": "after-filling"},
+  "periodic_criteria": {},
+  "rcr_initialization": {"mode": "specified"},
+  "cut_pressure_solver": {"rtol": 1e-12, "atol": 1e-14},
+  "tract_geometry_gpu": true,
+  "pressure_compact_geometry": false,
+  "cut_diagnostics_every": 100,
+  "active_diagnostics_every": 100,
+  "checkpoint_every": 100,
+  "verify_restart": true,
+  "output": "results/afsei_source_timing_neck_two_cycles_20261029"
+}

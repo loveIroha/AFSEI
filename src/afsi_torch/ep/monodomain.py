@@ -51,10 +51,12 @@ class Monodomain:
         if directions not in ('nodal', 'cell'):
             raise ValueError('directions must be nodal or cell')
         self.numerics = numerics or MonodomainNumerics()
+        diffusion = (self.numerics.discretization if self.numerics.diffusion_quadrature=='match_mass'
+                     else self.numerics.diffusion_quadrature)
         self.geometry = prepare_p1(X, cells,
             # Affine simplex volume/gradient use a low-order geometry rule.
             # The nodal PDE evaluates tensor and mass at every simplex vertex.
-            degree=5 if self.numerics.discretization == 'consistent_p1' else 1)
+            degree=5 if 'consistent_p1' in (self.numerics.discretization,diffusion) else 1)
         self.X = X.detach().clone()
         self.cells = self.geometry.cells
         self.parameters = parameters or MonodomainParameters()
@@ -67,11 +69,23 @@ class Monodomain:
                     or not torch.isfinite(value).all()):
                 raise ValueError('directions must match mesh shape, dtype and device')
         volume = self.geometry.weights.sum(dim=1)
+        self.reference_volume = volume.clone()
+        self._deformation_input = None
+        self._deformation_version = None
+        self.deformation_gradient = torch.eye(dimension,device=X.device,dtype=X.dtype).expand(len(cells),-1,-1).clone()
+        self.volume_ratio = torch.ones_like(volume)
         if self.numerics.discretization == 'nodal_p1':
             N = torch.eye(vertices, dtype=X.dtype, device=X.device)
             weights = (volume[:, None]/vertices).expand(-1, vertices)
         else:
             N, weights = self.geometry.values, self.geometry.weights
+        local_mass = torch.einsum('eq,qa,qb->eab', weights, N, N)
+        if diffusion!=self.numerics.discretization:
+            if diffusion=='nodal_p1':
+                N=torch.eye(vertices,dtype=X.dtype,device=X.device)
+                weights=(volume[:,None]/vertices).expand(-1,vertices)
+            else:
+                N,weights=self.geometry.values,self.geometry.weights
         if directions == 'nodal':
             f = torch.einsum('qa,eai->eqi', N, fiber[self.cells])
             s = torch.einsum('qa,eai->eqi', N, sheet[self.cells])
@@ -86,8 +100,8 @@ class Monodomain:
         D = gf*outer(f)+gs*outer(s)
         if dimension == 3:
             D = D+gn*outer(n)
+        self.reference_conductivity = D
         gradients = self.geometry.gradients[:, 0]
-        local_mass = torch.einsum('eq,qa,qb->eab', weights, N, N)
         local_stiffness = torch.einsum('eq,eaI,eqIJ,ebJ->eab', weights, gradients, D, gradients)
         scatter = lambda local: X.new_zeros(len(X)).index_add(0, self.cells.reshape(-1), local.reshape(-1))
         self.mass_diagonal = scatter(local_mass.diagonal(dim1=-2, dim2=-1))
@@ -119,6 +133,46 @@ class Monodomain:
             self.projection_mass = _assemble(self.cells, consistent, len(X))
             self.projection_diagonal = scatter(consistent.diagonal(dim1=-2, dim2=-1))
 
+    @torch.no_grad()
+    def update_deformation(self, coordinates):
+        """Accepted material-node coordinates; exact Eq.14 pullback on P1 cells.
+
+        K stays invariant. M and reaction/stimulus integration use current cell
+        volumes. Reference Land projection and voltage DOF identities stay fixed.
+        Frozen geometry is used throughout the next mechanics interval (staggered).
+        """
+        if coordinates.shape!=self.X.shape or coordinates.device!=self.X.device or coordinates.dtype!=self.X.dtype:
+            raise ValueError('deformed EP coordinates must match reference nodes')
+        version=None if torch.is_inference(coordinates) else coordinates._version
+        if coordinates is self._deformation_input and version is not None and version==self._deformation_version:
+            return False
+        F=torch.einsum('eai,eaJ->eiJ',coordinates[self.cells],self.geometry.gradients[:,0])
+        J=torch.linalg.det(F)
+        if not torch.isfinite(coordinates).all() or not torch.isfinite(J).all() or (J<=0).any():
+            raise ValueError('invalid/inverted EP deformation; previous operator retained')
+        vertices=self.cells.shape[1];volume=self.reference_volume*J
+        scatter=lambda values:self.X.new_zeros(len(self.X)).index_add(0,self.cells.flatten(),values.flatten())
+        if self.numerics.discretization=='nodal_p1':
+            diagonal=scatter((volume[:,None]/vertices).expand(-1,vertices))
+            index=torch.arange(len(self.X),device=self.X.device)
+            mass=torch.sparse_coo_tensor(torch.stack((index,index)),diagonal,(len(self.X),len(self.X))).coalesce().to_sparse_csr()
+        else:
+            local=volume[:,None,None]/(vertices*(vertices+1))*(self.X.new_ones((vertices,vertices))+
+                torch.eye(vertices,device=self.X.device,dtype=self.X.dtype))
+            diagonal=scatter(local.diagonal(dim1=-2,dim2=-1))
+            mass=_assemble(self.cells,local,len(self.X))
+        # Invalidate both linear solver and fused RHS graphs before replacing M.
+        self.close()
+        self.mass,self.mass_diagonal=mass,diagonal
+        self.deformation_gradient,self.volume_ratio=F,J
+        self._deformation_input,self._deformation_version=coordinates,version
+        return True
+
+    def spatial_conductivity(self):
+        """Current Gd at the original diffusion quadrature sites, for diagnostics."""
+        from .deformation import push_forward_conductivity
+        return push_forward_conductivity(self.deformation_gradient,self.reference_conductivity)
+
     def _system(self, dt_s):
         if dt_s not in self._systems:
             p = self.parameters
@@ -147,6 +201,7 @@ class Monodomain:
             if backend is not None:
                 backend.close()
         self._systems.clear()
+        if hasattr(self,'_rhs_buffers'):self._rhs_buffers.clear()
 
     def _field(self, value, name):
         if (value.shape != (len(self.X),) or value.dtype != self.X.dtype
@@ -161,16 +216,30 @@ class Monodomain:
     def step(self, voltage_v, ionic_ua_per_cm2, stimulus_ua_per_cm2, dt_s):
         if not isfinite(dt_s) or dt_s <= 0:
             raise ValueError('EP dt must be positive seconds')
-        for value, name in ((voltage_v, 'voltage'), (ionic_ua_per_cm2, 'ionic current'),
-                            (stimulus_ua_per_cm2, 'stimulus')):
-            self._field(value, name)
+        fields=(voltage_v,ionic_ua_per_cm2,stimulus_ua_per_cm2)
+        for value in fields:
+            if value.shape!=(len(self.X),) or value.dtype!=self.X.dtype or value.device!=self.X.device:
+                raise ValueError('EP fields must match mesh shape, dtype and device')
+        if not (torch.isfinite(fields[0]).all() & torch.isfinite(fields[1]).all() & torch.isfinite(fields[2]).all()):
+            raise ValueError('EP fields must be finite')
         p = self.parameters
         alpha, matrix, backend = self._system(dt_s)
-        source = alpha*voltage_v+p.surface_to_volume_per_cm*(stimulus_ua_per_cm2-ionic_ua_per_cm2)
-        rhs = self.mass_diagonal*source if self.numerics.discretization == 'nodal_p1' else self._mv(self.mass, source)
-        if self.numerics.theta!=1.:
-            rhs=rhs-(1-self.numerics.theta)*self._mv(self.stiffness,voltage_v)
+        if self.X.is_cuda:
+            from .gpu_kernels import BufferedRHS
+            if not hasattr(self,'_rhs_buffers'):self._rhs_buffers={}
+            if dt_s not in self._rhs_buffers:
+                self._rhs_buffers[dt_s]=BufferedRHS(self.mass,self.mass_diagonal,self.stiffness,
+                    alpha,p.surface_to_volume_per_cm,self.numerics.theta,self.numerics.discretization=='nodal_p1')
+            rhs=self._rhs_buffers[dt_s](*fields)
+        else:
+            source = alpha*voltage_v+p.surface_to_volume_per_cm*(stimulus_ua_per_cm2-ionic_ua_per_cm2)
+            rhs = self.mass_diagonal*source if self.numerics.discretization == 'nodal_p1' else self._mv(self.mass, source)
+            if self.numerics.theta!=1.:
+                rhs=rhs-(1-self.numerics.theta)*self._mv(self.stiffness,voltage_v)
         if backend is not None:
+            if self.X.is_cuda and self.numerics.backend=='torch_pcg_jacobi_light':
+                return backend.solve(rhs,initial=voltage_v,
+                    initial_residual=self._rhs_buffers[dt_s].initial_residual)
             return backend.solve(rhs, initial=voltage_v)
         action = lambda v: self._mv(matrix, v)
         return pcg(action, rhs, alpha*self.mass_diagonal+self.numerics.theta*self.stiffness_diagonal,

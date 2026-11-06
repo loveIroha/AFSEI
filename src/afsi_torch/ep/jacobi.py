@@ -53,7 +53,7 @@ def _solve(A: torch.Tensor, b: torch.Tensor, diagonal: torch.Tensor,
     raise RuntimeError('EP Jacobi-PCG iteration limit reached')
 
 
-class JacobiPCG:
+class ReferenceJacobiPCG:
     def __init__(self,matrix,diagonal,options):
         if (matrix.layout!=torch.sparse_csr or matrix.shape[0]!=matrix.shape[1]
                 or diagonal.shape!=(matrix.shape[0],) or diagonal.device!=matrix.device
@@ -76,3 +76,26 @@ class JacobiPCG:
 
     def close(self):
         pass
+
+
+class JacobiPCG(ReferenceJacobiPCG):
+    """CPU reference or buffered, segmented CUDA Graph execution on GPU."""
+    def __init__(self,matrix,diagonal,options):
+        super().__init__(matrix,diagonal,options)
+        self.optimized=None
+        if matrix.is_cuda:
+            from .graph_pcg import GraphJacobiPCG
+            self.optimized=GraphJacobiPCG(matrix,diagonal,options)
+
+    def solve(self,rhs,*,initial,initial_residual=None):
+        if self.optimized is None:return super().solve(rhs,initial=initial)
+        for value in (rhs,initial):
+            if value.shape!=self.diagonal.shape or value.dtype!=self.diagonal.dtype or value.device!=self.diagonal.device:
+                raise ValueError('EP PCG vectors must match cached matrix')
+        if initial_residual is not None:
+            if initial_residual.shape!=rhs.shape or initial_residual.dtype!=rhs.dtype or initial_residual.device!=rhs.device:
+                raise ValueError('EP initial residual must match RHS')
+        return self.optimized.solve(rhs,initial=initial,initial_residual=initial_residual)
+
+    def close(self):
+        if self.optimized is not None:self.optimized.close()

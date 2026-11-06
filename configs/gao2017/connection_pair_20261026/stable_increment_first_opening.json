@@ -1,0 +1,11 @@
+{
+  "resume": "results/gao_cut_cycle_validation_20261026/stable_increment_crossing_20261027/checkpoint.npz",
+  "duration_ms": 90.0,
+  "stop_after_event": {"name": "PHYSICAL_AV_OPENING", "advance_ms": 2.0},
+  "cut_pressure_solver": {"rtol": 1e-12, "atol": 1e-14},
+  "tract_geometry_gpu": true,
+  "pressure_compact_geometry": false,
+  "checkpoint_every": 25,
+  "verify_restart": false,
+  "output": "results/gao_cut_cycle_validation_20261026/stable_increment_first_opening_20261027"
+}

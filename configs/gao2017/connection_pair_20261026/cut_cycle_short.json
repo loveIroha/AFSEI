@@ -1,0 +1,9 @@
+{
+  "reference_checkpoint": "results/afsei_two_cycles_coarse_900ms_20261023/diagnostics/tick_00027998/checkpoint.npz",
+  "preload_history": "results/gao_cut_cycle_validation_20261026/loading/preload_history.npz",
+  "circulation_config": "configs/gao2017/two_cycles_coarse_20261023/circulation.json",
+  "duration_ms": 2.0,
+  "checkpoint_every": 10,
+  "verify_restart": true,
+  "output": "results/gao_cut_cycle_validation_20261026/ep_fsi_2ms"
+}

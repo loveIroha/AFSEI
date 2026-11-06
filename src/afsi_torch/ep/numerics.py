@@ -6,11 +6,12 @@ from ..fluid.solvers import SolverOptions
 @dataclass(frozen=True)
 class MonodomainNumerics:
     discretization: str = 'nodal_p1'
-    backend: str = 'amgx_pcg_amg'
+    backend: str = 'torch_pcg_jacobi_light'
     solver: SolverOptions = field(default_factory=lambda: SolverOptions(
         rtol=1e-10, atol=1e-13, check_every=5))
     time_scheme: str = 'crank_nicolson'
     amg_profile: str = 'size2'
+    diffusion_quadrature: str = 'match_mass'
 
     def __post_init__(self):
         if self.discretization not in ('nodal_p1', 'consistent_p1'):
@@ -23,6 +24,8 @@ class MonodomainNumerics:
             raise ValueError('EP time_scheme must be backward_euler or crank_nicolson')
         if self.amg_profile not in ('size2','size4','size8','size8_two_level'):
             raise ValueError('unsupported EP amg_profile')
+        if self.diffusion_quadrature not in ('match_mass','nodal_p1','consistent_p1'):
+            raise ValueError('unsupported diffusion quadrature')
 
     @property
     def theta(self):

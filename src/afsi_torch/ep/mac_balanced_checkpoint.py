@@ -23,6 +23,12 @@ PRODUCER = 'afsei-mac-balanced-interval-validation'
 
 
 def save(path,driver,state,progress=None):
+    cut=getattr(driver,'gao_cut_boundary',False)
+    if cut and not getattr(driver,'cut_cycle_implemented',False):
+        raise ValueError('physical-cut LV branch is validation-only; its fixed tract anchor is not in the cycle restart schema')
+    if cut and (getattr(driver,'gao_tract_anchor',None) is None
+            or not getattr(driver,'cut_preload_metadata',None)):
+        raise ValueError('physical-cut cycle requires its fixed anchor and complete loading provenance')
     driver.validate_control(state)
     path = Path(path); path.parent.mkdir(parents=True,exist_ok=True)
     temporary = path.with_suffix(path.suffix+'.working')
@@ -34,14 +40,20 @@ def save(path,driver,state,progress=None):
         meta.update(producer=PRODUCER, balanced=dict(target_volume_ml=state.target_volume_ml,
             mode=state.mode,arterial_pc_mmhg=state.arterial_pc_mmhg,windkessel=asdict(state.windkessel),
             outlet_open=state.outlet_open,accepted_port_steps=state.accepted_port_steps,
-            cap_mode=state.cap_mode,filling_pressure_mmhg=state.filling_pressure_mmhg),
+            cap_mode=state.cap_mode,filling_pressure_mmhg=state.filling_pressure_mmhg,
+            wall_pressure_mmhg=state.wall_pressure_mmhg,
+            cap_reference_mmhg=state.cap_reference_mmhg),
             balanced_execution=dict(level=driver.pressure_mode_level,
                 compact_cap_operators=driver.compact_cap_operators,
                 mass_graph_check_every=driver.mass_graph_check_every,
                 balanced_tangent_chunk_size=driver.balanced_tangent_chunk_size,
                 helmholtz_initial_sweeps=driver.helmholtz_initial_sweeps,
                 reuse_step_tangent=driver.reuse_step_tangent,
-                volume_transfer='integrated-p1-gradient-v1',
+                volume_transfer=driver.volume_transfer,
+                spatial_coupling=driver.spatial_coupling,
+                pressure_backend=driver.pressure_backend,
+                fluid_solver=driver.fluid_solver,
+                cap_integration_rule=driver.cap_integration_rule,
                 guard_cells=driver.pressure_guard_cells,one_way=driver.one_way,
                 cap_patch_width_cells=driver.cap_patch_width_cells,
                 valve_resistance_mmhg_s_per_ml=driver.valve_resistance_mmhg_s_per_ml,
@@ -49,6 +61,20 @@ def save(path,driver,state,progress=None):
             circulation_ports_connected=state.mode=='rcr',full_phase_controller=False)
         data['cap_pressure'] = state.cap_pressure.detach().cpu().numpy()
         data['cap_geometry'] = state.cap_geometry.detach().cpu().numpy()
+        if cut:
+            data['gao_tract_anchor']=driver.gao_tract_anchor.detach().cpu().numpy()
+            meta['cut_boundary']=dict(version=1,preload=driver.cut_preload_metadata,
+                compact_geometry=bool(getattr(driver,'cut_pressure_compact_geometry',False)),
+                tract_geometry_gpu=bool(getattr(driver,'cut_tract_geometry_gpu',False)),
+                pressure_solver_tolerances=getattr(driver,'cut_pressure_tolerances',None))
+            meta['cut_boundary']['geometry']=getattr(driver,'cut_geometry',{})
+            meta['cut_boundary']['initialization']=getattr(driver,'cut_initialization',None)
+            meta['cut_boundary']['end_tick']=driver.end_tick
+            monitor=getattr(driver,'periodic_monitor',None)
+            if monitor is not None:
+                meta['cut_boundary']['periodic_monitor']=monitor.metadata()
+                for name,value in monitor.reference.items():
+                    data['cut_periodic_'+name]=value.detach().cpu().numpy()
         if hasattr(driver,'checkpoint_metadata'):
             meta.update(driver.checkpoint_metadata(state))
         meta['sha256'] = base.digest(meta,data)
@@ -71,9 +97,18 @@ def load(path,device='cuda',*,cardiac=False):
         data = {k:archive[k] for k in archive.files}
     try:
         meta = json.loads(str(data.pop('metadata'))); checksum = meta.pop('sha256')
+        cut=False
+        if cardiac:
+            from .cut_cycle import PRODUCER as CUT_PRODUCER,CutCardiacStepper,CutCardiacState
+            cut=meta.get('producer')==CUT_PRODUCER
+            if cut:
+                expected=CUT_PRODUCER;driver_class=CutCardiacStepper;state_class=CutCardiacState
+        allowed=base.OPTIONAL | ({'gao_tract_anchor','cut_periodic_voltage','cut_periodic_calcium',
+            'cut_periodic_land','cut_periodic_stretch','cut_periodic_position','cut_periodic_fluid_0',
+            'cut_periodic_fluid_1','cut_periodic_fluid_2','cut_periodic_pressure'} if cut else set())
         if (meta.get('producer') != expected or meta.get('schema') != 1
                 or base.digest(meta,data) != checksum or not base.REQUIRED <= set(data)
-                or set(data)-base.REQUIRED-base.OPTIONAL
+                or set(data)-base.REQUIRED-allowed
                 or not {'cap_pressure','cap_geometry'} <= set(data)):
             raise ValueError('invalid balanced checkpoint/schema/checksum')
         for name,a in data.items():
@@ -83,10 +118,16 @@ def load(path,device='cuda',*,cardiac=False):
         optional = lambda n: tensor(n) if n in data else None
         mesh = ImportedSolidMesh(*(tensor(n) for n in base.MESH),meta['vertex_count'],meta['mesh_metadata'])
         cfg = decode_checkpoint_config(meta['config']); settings = meta['balanced_execution']
-        if settings.get('volume_transfer') != 'integrated-p1-gradient-v1':
+        spatial=settings.get('spatial_coupling','legacy-balanced')
+        expected_transfer=('LV-plus-fixed-tract-discrete-gradient-v1' if cut else
+            'griffith-luo-unified-p1-v1' if spatial=='griffith-luo-unified' else 'integrated-p1-gradient-v1')
+        if settings.get('volume_transfer') != expected_transfer:
             raise ValueError('checkpoint uses a different volume transfer discretization')
         if cardiac: extra=meta['cardiac_execution']
-        driver = driver_class(mesh,cfg,level=settings['level'],**extra)
+        driver = driver_class(mesh,cfg,level=settings['level'],spatial_coupling=spatial,
+                              pressure_backend=settings.get('pressure_backend','spectral'),
+                              fluid_solver=settings.get('fluid_solver','be-projection'),
+                              cap_integration_rule=settings.get('cap_integration_rule','centroid'),**extra)
         # Execution settings preserve equations and all true-residual tolerances.
         driver.compact_cap_operators=settings.get('compact_cap_operators',True)
         driver.mass_graph_check_every=settings.get('mass_graph_check_every',16)
@@ -99,6 +140,29 @@ def load(path,device='cuda',*,cardiac=False):
         driver.cap_patch_width_cells = settings['cap_patch_width_cells']
         driver.valve_resistance_mmhg_s_per_ml = settings['valve_resistance_mmhg_s_per_ml']
         driver.port_geometry = PortGeometry(**settings['port_geometry']) if settings['port_geometry'] else None
+        if cut:
+            if (meta['cut_boundary'].get('version')!=1 or 'gao_tract_anchor' not in data
+                    or meta['cut_boundary']['preload'].get('steps')!=100):
+                raise ValueError('physical-cut checkpoint lacks its fixed geometry/loading history')
+            driver.gao_tract_anchor=tensor('gao_tract_anchor')
+            if driver.gao_tract_anchor.shape!=driver.mesh.X.shape:
+                raise ValueError('physical-cut anchor shape mismatch')
+            driver.cut_preload_metadata=meta['cut_boundary']['preload']
+            driver.cut_pressure_compact_geometry=meta['cut_boundary'].get('compact_geometry',False)
+            driver.cut_tract_geometry_gpu=meta['cut_boundary'].get('tract_geometry_gpu',False)
+            driver.cut_pressure_tolerances=meta['cut_boundary'].get('pressure_solver_tolerances')
+            driver.cut_geometry=meta['cut_boundary'].get('geometry',{})
+            driver.cut_initialization=meta['cut_boundary'].get('initialization')
+            driver.end_tick=meta['cut_boundary'].get('end_tick',driver.end_tick)
+            periodic=meta['cut_boundary'].get('periodic_monitor')
+            if periodic is not None:
+                if driver.periodic_monitor is None:raise ValueError('periodic criteria missing from restart')
+                driver.periodic_monitor.restore(periodic,{n:tensor('cut_periodic_'+n)
+                    for n in driver.periodic_monitor.NAMES if 'cut_periodic_'+n in data})
+            from ..mac.sealed_pressure import tightened_pressure_options
+            tightened_pressure_options(driver.config.fsi.pressure_solver,driver.cut_pressure_tolerances)
+            if type(driver.cut_tract_geometry_gpu) is not bool:
+                raise ValueError('tract_geometry_gpu must be boolean')
         fsi = PaperState(meta['step'],meta['time'],tensor('x'),tuple(tensor(f'velocity_{c}') for c in range(3)),
             tensor('pressure'),tensor('force'),meta['force_time'],pressure_time=meta['pressure_time'],
             previous_x=optional('previous_x'),previous_dt=meta['previous_dt'])

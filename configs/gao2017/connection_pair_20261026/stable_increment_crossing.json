@@ -1,0 +1,10 @@
+{
+  "resume": "results/gao_cut_cycle_validation_20261026/strict_pressure_first_opening/last_accepted_checkpoint.npz",
+  "duration_ms": 2.0,
+  "cut_pressure_solver": {"rtol": 1e-12, "atol": 1e-14},
+  "tract_geometry_gpu": true,
+  "pressure_compact_geometry": false,
+  "checkpoint_every": 5,
+  "verify_restart": false,
+  "output": "results/gao_cut_cycle_validation_20261026/stable_increment_crossing_20261027"
+}

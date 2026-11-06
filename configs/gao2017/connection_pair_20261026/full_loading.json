@@ -1,0 +1,5 @@
+{
+  "reference_checkpoint": "results/afsei_two_cycles_coarse_900ms_20261023/diagnostics/tick_00027998/checkpoint.npz",
+  "geometry_anchor": "results/afsei_peak665_av060_20261019/diagnostics/tick_00010002/checkpoint.npz",
+  "output": "results/gao_cut_cycle_validation_20261026/loading"
+}

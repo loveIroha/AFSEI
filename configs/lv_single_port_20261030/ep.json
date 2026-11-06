@@ -1,0 +1,13 @@
+{
+  "discretization": "nodal_p1",
+  "backend": "torch_pcg_jacobi_light",
+  "time_scheme": "crank_nicolson",
+  "diffusion_quadrature": "nodal_p1",
+  "solver": {
+    "rtol": 1e-10,
+    "atol": 1e-13,
+    "max_iterations": 1000,
+    "recompute_every": 40,
+    "check_every": 5
+  }
+}

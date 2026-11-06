@@ -1,0 +1,11 @@
+{
+  "physical_gpu": 1,
+  "resume": "results/gao_filling_to1300_20261022/early/pre_stimulus/checkpoint.npz",
+  "comparison": "results/gao_filling_to1300_20261022",
+  "output": "results/gao_delay100_early_20261022",
+  "source_time_ms": 1299.9,
+  "original_second_stimulus_ms": 1300.0,
+  "delayed_second_stimulus_ms": 1400.0,
+  "pre_stimulus_time_ms": 1399.9,
+  "scope": "100 ms extra filling before the second stimulus; early inlet; original pressure-waveform anchors retained"
+}

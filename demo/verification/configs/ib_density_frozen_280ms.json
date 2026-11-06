@@ -1,0 +1,10 @@
+{
+  "checkpoint": "/mnt/large2/gjh/AFSEI/results/volumetric_stabilization_20261025/results_analysis/retained_solid2_280ms/checkpoint.npz",
+  "checkpoint_sha256": "80fd32c3fe5f01d28aae7e2da699d6eb907f01af1c69f254ea1de103fb307d00",
+  "source_config": "/mnt/large2/gjh/AFSEI/results/volumetric_stabilization_20261025/results_analysis/retained_solid2_280ms/config.resolved.json",
+  "output": "/mnt/large2/gjh/AFSEI/results/ib_density_frozen_20261025",
+  "device": "cuda:0",
+  "densities": [2, 3],
+  "timing_repeats": 3,
+  "write_vtk": true
+}

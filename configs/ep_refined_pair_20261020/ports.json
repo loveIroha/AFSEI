@@ -1,0 +1,4 @@
+{
+  "mv_center_cm": [0.65, 0.0], "av_center_cm": [-0.65, 0.0],
+  "mv_radius_cm": 0.55, "av_radius_cm": 0.6, "spacing_cm": 0.18
+}

@@ -1,0 +1,43 @@
+{
+  "output": "/mnt/large2/gjh/AFSEI/results/ep_afsei_nodal_euler1us_20261031",
+  "operator_cache": "/mnt/large2/gjh/AFSEI/results/ep_opencarp_same_mesh_20261030",
+  "duration_s": 0.05,
+  "dt_s": 2E-05,
+  "ode_dt_ms": 0.001,
+  "solver": {
+    "rtol": 1E-10,
+    "atol": 1E-13,
+    "max_iterations": 1000,
+    "check_every": 5,
+    "recompute_every": 40
+  },
+  "geometry_mm": [
+    20,
+    7,
+    3
+  ],
+  "mesh_mm": 0.0625,
+  "fiber": [
+    1,
+    0,
+    0
+  ],
+  "boundary": "homogeneous zero flux on all surfaces",
+  "stimulus_cube_mm": [
+    1.5,
+    1.5,
+    1.5
+  ],
+  "stimulus_ua_cm2": 35.71,
+  "stimulus_ms": [
+    0,
+    2
+  ],
+  "physical_parameters": "Exact native openCARP Grandi parameters/default initial state and equivalent monodomain conductivities",
+  "retained_numerics": "AFSEI nodal P1 vertex quadrature, CN diffusion, light Jacobi-PCG; explicit Euler ODE with frozen Vm and averaged endpoint current",
+  "reference_result": "/mnt/large2/gjh/AFSEI/results/opencarp_gpb_h0p0625_20261030",
+  "ode_method": "explicit_euler",
+  "ode_execution": "fused_cached",
+  "save_final_cell_state": true,
+  "sdirk_reference_result": "/mnt/large2/gjh/AFSEI/results/ep_afsei_nodal_opencarp_matched_20261030"
+}

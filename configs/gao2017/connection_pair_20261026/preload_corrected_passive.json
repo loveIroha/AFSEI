@@ -1,0 +1,9 @@
+{
+  "resume": "results/afsei_peak665_av060_20261019/diagnostics/tick_00010002/checkpoint.npz",
+  "output": "results/gao_preload_compatibility_20261026/corrected_passive",
+  "connection": "physical-cut",
+  "pressure_mmhg": 8.0,
+  "correct_passive_preload": true,
+  "passive_hold": true,
+  "steps": 5
+}

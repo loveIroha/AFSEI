@@ -1,0 +1,7 @@
+{
+  "spatial_coupling": "legacy-balanced",
+  "pressure_backend": "spectral",
+  "ib_response_backend": "csr",
+  "fluid_solver": "be-projection",
+  "cap_integration_rule": "centroid"
+}

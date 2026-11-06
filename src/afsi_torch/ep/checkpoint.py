@@ -20,6 +20,7 @@ from .buffered_load import ActiveLoadState
 from .mac_isovolumic import IsovolumicState,IsovolumicAFSEIStepper
 from .windkessel import WindkesselParameters
 from .mac_rcr_coupled import RCRState,RCRAFSEIStepper
+from .mac_source_cycle import SourceLVState,SourceLVStepper
 
 MESH = ('X','cells','faces','facet_tags','boundary_cells','boundary_local_facets','fiber','sheet')
 INTEGER = {'cells','faces','facet_tags','boundary_cells','boundary_local_facets'}
@@ -41,6 +42,9 @@ def save(path,driver,state,progress=None):
     driver._check_clock(state)
     isovolumic = isinstance(state,IsovolumicState)
     rcr = isinstance(state,RCRState)
+    source_lv = isinstance(state,SourceLVState)
+    if source_lv and not isinstance(driver,SourceLVStepper):
+        raise ValueError('source LV state requires its own circulation driver')
     if rcr and not isinstance(driver,RCRAFSEIStepper):
         raise ValueError('coupled RCR state requires its own execution/history driver')
     if isovolumic: driver.validate_control(state)
@@ -75,6 +79,12 @@ def save(path,driver,state,progress=None):
             cavity_pressure_mmhg=state.cavity_pressure_mmhg,arterial_pc_mmhg=state.arterial_pc_mmhg,
             windkessel=asdict(state.windkessel),accepted_closed_steps=state.accepted_closed_steps)
         metadata['isovolumic_execution'] = driver.execution_settings()
+        if source_lv:
+            metadata['producer'] = 'afsei-source-windkessel-lv'
+            metadata['isovolumic'].update({name:getattr(state,name) for name in
+                ('phase','filling_start_tick','beat','cumulative_out_ml','cumulative_in_ml',
+                 'initial_volume_ml','outlet_flow_ml_s','arterial_pressure_mmhg',
+                 'filling_end_tick','filling_anchor_mmhg')})
         if rcr:
             metadata['producer'] = 'afsei-mac-rcr-interval-validation'
             metadata['circulation_ports_connected'] = True
@@ -98,9 +108,12 @@ def load(path,device='cuda'):
         metadata = json.loads(str(data.pop('metadata')))
         checksum = metadata.pop('sha256')
         rcr = metadata.get('producer') == 'afsei-mac-rcr-interval-validation'
+        source_lv = metadata.get('producer') == 'afsei-source-windkessel-lv'
+        if source_lv and ('isovolumic' not in metadata or 'isovolumic_execution' not in metadata):
+            raise ValueError('source LV circulation/history/execution required')
         if rcr and ('rcr' not in metadata or 'rcr_execution' not in metadata):
             raise ValueError('RCR control and execution settings required')
-        if (metadata.get('producer') not in ('afsei-ep-fsi','afsei-mac-isovolumic-validation','afsei-mac-rcr-interval-validation') or metadata.get('schema') != 1
+        if (metadata.get('producer') not in ('afsei-ep-fsi','afsei-mac-isovolumic-validation','afsei-mac-rcr-interval-validation','afsei-source-windkessel-lv') or metadata.get('schema') != 1
                 or metadata.get('units') != 'cm-g-s; V; microA/cm2; GPB-ms-mV'
                 or metadata.get('circulation_ports_connected') is not rcr
                 or not REQUIRED <= set(data) or set(data)-REQUIRED-OPTIONAL
@@ -112,8 +125,8 @@ def load(path,device='cuda'):
         config = decode_checkpoint_config(metadata['config'])
         tensor = lambda name: torch.as_tensor(data[name],device=device)
         mesh = ImportedSolidMesh(*(tensor(n) for n in MESH),metadata['vertex_count'],metadata['mesh_metadata'])
-        isovolumic = rcr or metadata['producer'] == 'afsei-mac-isovolumic-validation'
-        driver = (RCRAFSEIStepper if rcr else IsovolumicAFSEIStepper if isovolumic else AFSEIStepper)(mesh,config)
+        isovolumic = source_lv or rcr or metadata['producer'] == 'afsei-mac-isovolumic-validation'
+        driver = (SourceLVStepper if source_lv else RCRAFSEIStepper if rcr else IsovolumicAFSEIStepper if isovolumic else AFSEIStepper)(mesh,config)
         execution = 'rcr_execution' if rcr else 'isovolumic_execution'
         if isovolumic and execution in metadata:
             driver.set_execution(**metadata[execution])
@@ -130,7 +143,7 @@ def load(path,device='cuda'):
         if isovolumic:
             control = dict(metadata['rcr' if rcr else 'isovolumic'])
             control['windkessel'] = WindkesselParameters(**control['windkessel'])
-            state = (RCRState if rcr else IsovolumicState)(state,**control)
+            state = (SourceLVState if source_lv else RCRState if rcr else IsovolumicState)(state,**control)
             if 'cap_pressure' in data or 'cap_geometry' in data:
                 from dataclasses import replace
                 state = replace(state,cap_pressure=optional('cap_pressure'),cap_geometry=optional('cap_geometry'))

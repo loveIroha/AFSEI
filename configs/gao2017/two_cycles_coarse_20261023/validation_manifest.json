@@ -1,0 +1,53 @@
+{
+  "preflight": "passed",
+  "coarse_mesh": {
+    "ep_coarse_nodes": 26889,
+    "solid_cells": 135430
+  },
+  "stimulus_ms": [
+    500.0,
+    1400.0
+  ],
+  "end_time_ms": 2300.0,
+  "ep": {
+    "discretization": "nodal_p1",
+    "diffusion_quadrature": "nodal_p1",
+    "time_scheme": "crank_nicolson",
+    "backend": "amgx_pcg_amg",
+    "amg_profile": "size2",
+    "solver": {
+      "rtol": 1e-10,
+      "atol": 1e-13,
+      "max_iterations": 1000,
+      "recompute_every": 40,
+      "check_every": 5
+    }
+  },
+  "spatial": {
+    "spatial_coupling": "legacy-balanced",
+    "pressure_backend": "spectral",
+    "ib_response_backend": "csr",
+    "fluid_solver": "be-projection",
+    "cap_integration_rule": "centroid"
+  },
+  "files_sha256": {
+    "configs/gao2017/two_cycles_coarse_20261023.json": "17c5f0de13138539cbb9e5c901a205813244718a0140279a2bbb556ec7ea95f2",
+    "configs/gao2017/two_cycles_coarse_20261023/fsi.json": "4b481e25fe7e6ee393d694a1321be7ddf570a501966ffcb7e570938689d73f8f",
+    "configs/gao2017/two_cycles_coarse_20261023/ep.json": "1e8f3d1ac35bfb068966ad844d52f467f5ba00d11f56e6f07c6d7d31f0967a2e",
+    "configs/gao2017/two_cycles_coarse_20261023/spatial.json": "c3094a737770a5b893f9acb3aebe5e376a6fdf29df4435c9bd05ed301cdfbaa1",
+    "configs/gao2017/two_cycles_coarse_20261023/circulation.json": "b7205d28863f50cf195531902cd1fc7c2fe58beae7511d76504e85d6a07df8d2",
+    "configs/gao2017/two_cycles_coarse_20261023/ports.json": "9372476cbddea9643f6074affc619e12dfbfbd76d32582c31990351d88a9dd2f",
+    "configs/gao2017/two_cycles_coarse_20261023/diagnostics.json": "c7d3ce6cac3c364d1d3e5768199f26a4c24ca4b86d929ad14aa38d9cad1b3d10",
+    "scripts/run_afsei_cycle.py": "f5e3aa96f5850dd7471162358ff13f0534598cd46709f478646bc4907ab0699f",
+    "scripts/run_afsei_job.py": "020a061bf31eb2d0a13189c559d66cccaf12a7ae0d3ca074570e00be7fb2ed8b",
+    "scripts/run_afsei_profiled_job.py": "fd1c471e23a1195375b48a8d38d934f013223a471e497f444e2b4c28e41d655b",
+    "src/afsi_torch/ep/mac_cycle.py": "ca2efb99e13b91aca6c3b8b41f0a768cfbfe189e6c9f3938da1f581139620fe2",
+    "src/afsi_torch/ep/circulation_config.py": "69ffbc2faf7fa2c9f74fd8da93d6e239a6dddaf211f1743c7e43ba29cb095df9"
+  },
+  "git_head": "7cd454c6047b92415fe519e1880e73733906023e",
+  "validation": {
+    "original_phase_test": "passed",
+    "new_gpu_step_restart_and_both_beats_hold_test": "passed",
+    "initial_new_test_fixture_error": "missing supply field corrected; no production relaxation"
+  }
+}
